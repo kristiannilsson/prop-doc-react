@@ -26,29 +26,45 @@ npx @kristiannilsson/prop-doc-react [path/to/tsconfig.json]
 Defaults to `./tsconfig.json`.
 
 ```
+Definite Findings (4)
+
 src/components/common/LoadingDialog.tsx
   <LoadingDialog> — 3 render site(s)
-    message                      never passed by any parent
+    message                      [never] never passed by any parent
 
 src/components/booking-form/FormSection.tsx
   <FormSection> — 10 render site(s)
-    icon                         never passed by any parent
-    py                           never passed by any parent
+    icon                         [never] never passed by any parent
+    py                           [never] never passed by any parent
 
-33 finding(s) across 25 component(s) (33 definite). 205 components analyzed, 0 skipped.
+src/components/table/StatusIcon.tsx
+  <StatusIcon> — 1 render site(s)
+    onOpenDialog                 [callback-never-invoked] callback passed by parents but never referenced by the component
+
+Advisory Findings (2)
+
+src/components/booking-form/FormSection.tsx
+  <FormSection> — 10 render site(s)
+    compact                      [always] passed by every non-test parent (10 non-test render site(s))
+
+src/containers/common/CustomerSelector.tsx
+  <CustomerSelector> — 6 render site(s)
+    width                        [same-literal] always passed the same value when provided: 450
+
+6 finding(s) across 4 component(s) (4 definite). 205 components analyzed, 0 skipped.
 ```
 
 ### Options
 
-| Flag                          | Effect                                                                 |
-| ----------------------------- | ---------------------------------------------------------------------- |
-| `--json`                    | Machine-readable output                                                |
-| `--verbose`                 | Also list components skipped due to untyped spreads                    |
-| `--include-test-components` | Analyze components defined in test/story files too                     |
-| `--rules <list>`            | Comma-separated rules to run (default: all)                            |
-| `--min-sites <n>`           | Non-test sites required before statistical rules fire (default: 3)     |
-| `--baseline <path>`         | Ignore findings recorded in the baseline; only new findings gate CI    |
-| `--write-baseline`          | Record the current findings to the baseline file and exit 0            |
+| Flag                          | Effect                                                              |
+| ----------------------------- | ------------------------------------------------------------------- |
+| `--json`                    | Machine-readable output                                             |
+| `--verbose`                 | Also list components skipped due to untyped spreads                 |
+| `--include-test-components` | Analyze components defined in test/story files too                  |
+| `--rules <list>`            | Comma-separated rules to run (default: all)                         |
+| `--min-sites <n>`           | Non-test sites required before statistical rules fire (default: 3)  |
+| `--baseline <path>`         | Ignore findings recorded in the baseline; only new findings gate CI |
+| `--write-baseline`          | Record the current findings to the baseline file and exit 0         |
 
 ### Adopting on an existing codebase
 
