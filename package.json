@@ -1,0 +1,41 @@
+{
+  "name": "@prop-doc/react",
+  "version": "0.1.0",
+  "description": "Analyze React prop contracts to find dead, over-optional, and unused variants.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Kristian Nilsson",
+  "bin": {
+    "prop-doc": "dist/bin/cli.mjs"
+  },
+  "exports": {
+    ".": "./dist/lib/analyze.mjs"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "clean": "node -e \"import('node:fs').then(fs=>fs.rmSync('dist',{recursive:true,force:true}))\"",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run clean && npm run build && node --test \"test/*.test.mjs\""
+  },
+  "dependencies": {
+    "typescript": "~5.9.0"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "react",
+    "props",
+    "dead-code",
+    "unused",
+    "typescript",
+    "static-analysis",
+    "lint"
+  ],
+  "devDependencies": {
+    "@types/node": "^26.1.1"
+  }
+}
