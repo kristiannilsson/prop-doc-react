@@ -16,6 +16,8 @@ interface RecordPassedOptions {
   siteId: string;
   fromSpread?: boolean;
   literal?: LiteralValue;
+  /** For non-literal values: whether the expression's type admits undefined. Defaults to true (conservative). */
+  possiblyUndefined?: boolean;
 }
 
 function isJsxTagContext(identifier: ts.Identifier, tsApi: TsApi): boolean {
@@ -78,6 +80,13 @@ function literalFromAttribute(attr: ts.JsxAttribute, tsApi: TsApi): LiteralValue
   return undefined;
 }
 
+function typeAdmitsUndefined(type: ts.Type, tsApi: TsApi): boolean {
+  const loose =
+    tsApi.TypeFlags.Undefined | tsApi.TypeFlags.Void | tsApi.TypeFlags.Any | tsApi.TypeFlags.Unknown;
+  if (type.flags & loose) return true;
+  return type.isUnion() && type.types.some((t) => (t.flags & loose) !== 0);
+}
+
 function resolveToComponent(
   symbol: ts.Symbol | undefined,
   checker: ts.TypeChecker,
@@ -115,6 +124,7 @@ function getOrCreatePassStats(component: ComponentRecord, propName: string): Pas
     falseCount: 0,
     literalValues: new Set(),
     unknownValueInNonTest: false,
+    possiblyUndefinedInNonTest: false,
   };
   component.passed.set(propName, created);
   return created;
@@ -133,12 +143,15 @@ function recordPassed(
 
   stats.nonTestSites.add(options.siteId);
   if (options.fromSpread) {
+    // A spread's optional member may be absent at runtime entirely.
     stats.unknownValueInNonTest = true;
+    stats.possiblyUndefinedInNonTest = true;
     return;
   }
 
   if (options.literal === undefined) {
     stats.unknownValueInNonTest = true;
+    if (options.possiblyUndefined !== false) stats.possiblyUndefinedInNonTest = true;
     return;
   }
 
@@ -176,10 +189,24 @@ export function collectUsages({
 
     for (const attr of attributes.properties) {
       if (tsApi.isJsxAttribute(attr)) {
+        const literal = literalFromAttribute(attr, tsApi);
+        let possiblyUndefined: boolean | undefined;
+        if (
+          literal === undefined &&
+          attr.initializer &&
+          tsApi.isJsxExpression(attr.initializer) &&
+          attr.initializer.expression
+        ) {
+          possiblyUndefined = typeAdmitsUndefined(
+            checker.getTypeAtLocation(attr.initializer.expression),
+            tsApi,
+          );
+        }
         recordPassed(component, attr.name.getText(sf), sf.fileName, {
           isTestFile,
           siteId,
-          literal: literalFromAttribute(attr, tsApi),
+          literal,
+          possiblyUndefined,
         });
       } else if (tsApi.isJsxSpreadAttribute(attr)) {
         const spreadType = checker.getTypeAtLocation(attr.expression);
@@ -204,6 +231,7 @@ export function collectUsages({
       recordPassed(component, 'children', sf.fileName, {
         isTestFile,
         siteId,
+        possiblyUndefined: false,
       });
     }
   }

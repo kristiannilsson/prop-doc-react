@@ -4,19 +4,23 @@ import type {
   Finding,
   FindingKind,
   FindingSeverity,
-  OptionalPropMeta,
+  OwnPropMeta,
   SkippedComponent,
   TsApi,
 } from './types.mjs';
+import { analyzeBodyUsage, isConsumed } from './analyze-body.mjs';
 import { TEST_FILE_RE } from './constants.mjs';
 
 export const FINDING_SEVERITY: Record<FindingKind, FindingSeverity> = {
   never: 'definite',
   'tests-only': 'definite',
+  unconsumed: 'definite',
+  'callback-never-invoked': 'definite',
   always: 'advisory',
   'boolean-never-true': 'advisory',
   'boolean-never-false': 'advisory',
   'union-variant-never': 'advisory',
+  'default-never-used': 'advisory',
 };
 
 export const ALL_FINDING_KINDS = Object.keys(FINDING_SEVERITY) as FindingKind[];
@@ -101,26 +105,27 @@ function propSuppression(
   return kinds.size > 0 ? kinds : undefined;
 }
 
-function optionalOwnProps(
+function ownProps(
   component: ComponentRecord,
   checker: ts.TypeChecker,
   isProjectFile: (sf: ts.SourceFile) => boolean,
   tsApi: TsApi,
-): OptionalPropMeta[] {
+): OwnPropMeta[] {
   const param = component.fnNode.parameters[0];
   if (!param) return [];
   const type = checker.getTypeAtLocation(param);
-  const result: OptionalPropMeta[] = [];
+  const result: OwnPropMeta[] = [];
 
   for (const prop of type.getProperties()) {
-    if (!(prop.flags & tsApi.SymbolFlags.Optional)) continue;
     const declaredInProject = (prop.declarations ?? []).some((d) => isProjectFile(d.getSourceFile()));
     if (!declaredInProject) continue;
 
     const propType = checker.getTypeOfSymbolAtLocation(prop, param);
     result.push({
       name: prop.name,
+      optional: (prop.flags & tsApi.SymbolFlags.Optional) !== 0,
       isBoolean: isBooleanLike(propType, tsApi),
+      isCallable: checker.getNonNullableType(propType).getCallSignatures().length > 0,
       unionVariants: unionLiteralVariants(propType, tsApi),
       suppressed: propSuppression(prop, isProjectFile, tsApi),
     });
@@ -168,7 +173,8 @@ export function buildFindings({
     }
 
     const lowConfidence = component.indirectRefFiles.size > 0;
-    for (const prop of optionalOwnProps(component, checker, isProjectFile, tsApi)) {
+    const usage = analyzeBodyUsage(component, checker, tsApi);
+    for (const prop of ownProps(component, checker, isProjectFile, tsApi)) {
       if (prop.suppressed === 'all') continue;
       const suppressed = prop.suppressed;
       const active = (kind: FindingKind): boolean => ruleOn(kind) && !suppressed?.has(kind);
@@ -180,6 +186,30 @@ export function buildFindings({
         renderSites: component.renderSites,
         lowConfidence,
       };
+
+      // Consumption rules look at the component body, so they apply to
+      // required props too, whether or not any parent passes the prop.
+      if (!isConsumed(usage, prop.name)) {
+        if (prop.isCallable && passedStats) {
+          if (active('callback-never-invoked')) push({ ...base, kind: 'callback-never-invoked' });
+        } else if (active('unconsumed')) {
+          push({ ...base, kind: 'unconsumed' });
+        }
+      }
+
+      if (
+        active('default-never-used') &&
+        usage.defaulted.has(prop.name) &&
+        passedStats &&
+        component.renderSitesNonTest >= minSites &&
+        passedStats.nonTestSites.size === component.renderSitesNonTest &&
+        !passedStats.possiblyUndefinedInNonTest
+      ) {
+        push({ ...base, kind: 'default-never-used', nonTestRenderSites: component.renderSitesNonTest });
+      }
+
+      // The remaining rules only make sense for optional props.
+      if (!prop.optional) continue;
 
       if (!passedStats) {
         if (active('never')) push({ ...base, kind: 'never' });

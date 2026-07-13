@@ -64,7 +64,7 @@ test('--min-sites raises the statistical threshold without touching definite rul
   const { status, stdout } = run(fixtureTsconfig, '--min-sites', '99', '--json');
   const report = JSON.parse(stdout);
   assert.ok(report.findings.length > 0);
-  assert.ok(report.findings.every((f) => f.kind === 'never' || f.kind === 'tests-only'));
+  assert.ok(report.findings.every((f) => f.severity === 'definite'));
   assert.equal(status, 1);
 });
 

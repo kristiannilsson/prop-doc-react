@@ -7,7 +7,7 @@ interface DeadProps {
   dead?: boolean; // never passed anywhere -> 'never' finding
 }
 export function Dead(props: DeadProps) {
-  return <div>{props.used}</div>;
+  return <div>{props.used}{String(props.dead)}</div>;
 }
 
 interface AliveProps {
@@ -22,7 +22,7 @@ interface SpreadTargetProps {
   uncovered?: number; // not in the spread's type -> 'never' finding
 }
 export function SpreadTarget(props: SpreadTargetProps) {
-  return <div>{props.covered}</div>;
+  return <div>{props.covered}{props.uncovered}</div>;
 }
 
 interface OpaqueTargetProps {
@@ -102,4 +102,52 @@ interface UnionModeProps {
 }
 export function UnionMode(props: UnionModeProps) {
   return <div>{props.mode}</div>;
+}
+
+interface UnconsumedProps {
+  used?: string;
+  ignored: number; // required and passed, but the body never reads it -> 'unconsumed'
+}
+export function Unconsumed({ used }: UnconsumedProps) {
+  return <div>{used}</div>;
+}
+
+interface CallbacksProps {
+  label?: string;
+  onDead?: () => void; // passed by app.tsx but never referenced -> 'callback-never-invoked'
+  onUsed?: () => void; // invoked -> no finding
+  onForwarded?: () => void; // forwarded via JSX -> no finding
+}
+export function Callbacks(props: CallbacksProps) {
+  props.onUsed?.();
+  return <button onClick={props.onForwarded}>{props.label}</button>;
+}
+
+interface RestForwardProps {
+  picked?: string;
+  forwarded?: string; // captured and forwarded by the referenced rest spread -> no finding
+}
+export function RestForward({ picked, ...rest }: RestForwardProps) {
+  return <div data-picked={picked} {...rest} />;
+}
+
+interface DefaultDeadProps {
+  size?: number; // every non-test site passes a defined value -> 'default-never-used'
+}
+export function DefaultDead({ size = 10 }: DefaultDeadProps) {
+  return <div>{size}</div>;
+}
+
+interface DefaultMaybeProps {
+  size?: number; // one site passes a possibly-undefined value -> default may run, no finding
+}
+export function DefaultMaybe({ size = 10 }: DefaultMaybeProps) {
+  return <div>{size}</div>;
+}
+
+interface OpaqueBodyProps {
+  mystery?: string; // props object escapes -> consumption rules stay silent
+}
+export function OpaqueBody(props: OpaqueBodyProps) {
+  return <div>{JSON.stringify(props)}</div>;
 }

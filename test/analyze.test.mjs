@@ -99,10 +99,18 @@ test('rules option limits which rules run', () => {
   assert.ok(filtered.findings.every((f) => f.kind === 'never'));
 });
 
+const STATISTICAL_KINDS = [
+  'always',
+  'boolean-never-true',
+  'boolean-never-false',
+  'union-variant-never',
+  'default-never-used',
+];
+
 test('minSites above the fixture site count suppresses statistical rules only', () => {
   const strict = analyzeProject(fixtureTsconfig, { minSites: 4 });
   assert.ok(strict.findings.length > 0);
-  assert.ok(strict.findings.every((f) => f.kind === 'never' || f.kind === 'tests-only'));
+  assert.ok(strict.findings.every((f) => !STATISTICAL_KINDS.includes(f.kind)));
 });
 
 test('excludes components defined in test files by default', () => {
@@ -110,7 +118,41 @@ test('excludes components defined in test files by default', () => {
 });
 
 test('counts all components with a props parameter, including test-file ones', () => {
-  assert.equal(result.componentsAnalyzed, 15);
+  assert.equal(result.componentsAnalyzed, 21);
+});
+
+test('flags props (required included) the body never reads or forwards', () => {
+  const [finding, ...rest] = findingsFor('Unconsumed');
+  assert.equal(rest.length, 0);
+  assert.equal(finding.prop, 'ignored');
+  assert.equal(finding.kind, 'unconsumed');
+  assert.equal(finding.severity, 'definite');
+});
+
+test('flags callbacks passed by parents but never referenced, sparing invoked and forwarded ones', () => {
+  const [finding, ...rest] = findingsFor('Callbacks');
+  assert.equal(rest.length, 0);
+  assert.equal(finding.prop, 'onDead');
+  assert.equal(finding.kind, 'callback-never-invoked');
+  assert.equal(finding.severity, 'definite');
+});
+
+test('credits props forwarded through a referenced rest spread', () => {
+  assert.deepEqual(findingsFor('RestForward'), []);
+});
+
+test('consumption rules stay silent when the props object escapes whole', () => {
+  assert.deepEqual(findingsFor('OpaqueBody'), []);
+});
+
+test('flags destructuring defaults that no non-test site can exercise', () => {
+  const kinds = findingsFor('DefaultDead').map((f) => f.kind).sort();
+  assert.deepEqual(kinds, ['always', 'default-never-used']);
+});
+
+test('spares destructuring defaults when a site may pass undefined', () => {
+  const kinds = findingsFor('DefaultMaybe').map((f) => f.kind);
+  assert.ok(!kinds.includes('default-never-used'));
 });
 
 test('a bare prop-doc-ignore comment suppresses every rule for that prop', () => {

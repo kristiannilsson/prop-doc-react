@@ -5,7 +5,10 @@ Find React component prop-API drift that accumulates silently across a codebase:
 - optional props that no parent ever passes,
 - optional props always passed by production parents (candidate required props),
 - optional boolean props that are only ever passed one side,
-- optional union variants that are never used.
+- optional union variants that are never used,
+- props (required ones too) the component body never reads or forwards,
+- callback props parents pass that the component never references,
+- destructuring defaults that no production callsite can ever trigger.
 
 The component handles the prop correctly, the types check, the branch is tested by nothing and reachable by nothing. Greps can't find these because the evidence is an *absence* spread across every other file. This tool runs a whole-program analysis with the TypeScript type checker and reports them.
 
@@ -83,7 +86,8 @@ const { findings, skipped, componentsAnalyzed } = analyzeProject('tsconfig.json'
 
 1. Collects component definitions: uppercase-named function declarations and variable declarations initialized with a function, unwrapping `memo` / `forwardRef` / `observer`.
 2. Walks all JSX and resolves each tag back to its component symbol through imports and aliases, recording which attributes each render site passes. Spread attributes (`{...props}`) are expanded via their static type; JSX nesting counts as passing `children`.
-3. Reports optional props — declared in *your* code, not inherited from library types — that are never passed, only passed from tests, always passed by non-test parents, one-sided booleans, or dead union variants.
+3. Analyzes each component body's own prop usage — destructuring (including defaults and rest forwarding) and `props.x` access — bailing out conservatively when the props object escapes whole (aliased, spread, passed to a function).
+4. Reports props — declared in *your* code, not inherited from library types — that are never passed, only passed from tests, always passed by non-test parents, one-sided booleans, dead union variants, never consumed by the body, never-invoked callbacks, or dead destructuring defaults.
 
 ## Avoiding false positives
 

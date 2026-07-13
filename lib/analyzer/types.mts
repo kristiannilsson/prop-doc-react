@@ -8,7 +8,10 @@ export type FindingKind =
   | 'always'
   | 'boolean-never-true'
   | 'boolean-never-false'
-  | 'union-variant-never';
+  | 'union-variant-never'
+  | 'unconsumed'
+  | 'callback-never-invoked'
+  | 'default-never-used';
 
 // 'definite' findings point at dead code; 'advisory' findings are API-design
 // suggestions inferred from usage statistics. Only high-confidence definite
@@ -24,14 +27,34 @@ export interface PassStats {
   falseCount: number;
   literalValues: Set<string>;
   unknownValueInNonTest: boolean;
+  /** Some non-test site may pass `undefined` (per the value's type), so a destructuring default could still be exercised. */
+  possiblyUndefinedInNonTest: boolean;
 }
 
-export interface OptionalPropMeta {
+export interface OwnPropMeta {
   name: string;
+  optional: boolean;
   isBoolean: boolean;
+  /** The prop's (non-nullable) type is callable. */
+  isCallable: boolean;
   unionVariants: string[];
   /** Rules suppressed via `prop-doc-ignore` comments on the prop declaration. */
   suppressed: 'all' | Set<FindingKind> | undefined;
+}
+
+/** How a component's body uses its props, from destructuring and `props.x` access. */
+export interface BodyUsage {
+  /** The props object escapes whole (aliased, spread, passed along); nothing can be concluded. */
+  opaque: boolean;
+  /** Props read via a referenced destructured binding or a `props.x` access. */
+  consumed: Set<string>;
+  /** Props with a destructuring default value. */
+  defaulted: Set<string>;
+  /**
+   * For each referenced `...rest` binding, the prop names its pattern picks off;
+   * every prop NOT in the set is consumed (forwarded) through that rest.
+   */
+  restRemainders: Set<string>[];
 }
 
 export interface ComponentRecord {

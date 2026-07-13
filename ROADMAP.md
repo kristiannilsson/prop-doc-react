@@ -17,14 +17,10 @@ Implemented and shipping:
 - Minimum render-site threshold for statistical rules (`always`, boolean one-sided, union variants) via `--min-sites` (default 3), so "always passed" can't mean "passed once".
 - Baseline file (`--write-baseline` / `--baseline`): record current findings, fail only on *new* ones — makes the CI gate adoptable on existing codebases without a full cleanup first.
 - Inline suppression comments on the prop declaration (`// prop-doc-ignore` or `// prop-doc-ignore <rule, ...>`).
-
-## Next: Consumption analysis (the marquee rules)
-
-Both require the same new capability — analyzing how the component *body* uses its props (destructuring, `props.x` access, rest-spread forwarding), conservatively:
-
-- Prop accepted by component but never consumed and never forwarded.
-- Callback prop passed by parents but never invoked by the component.
-- Default/fallback value never exercised (destructuring default + every production callsite passes the prop).
+- Consumption analysis of the component body (destructuring, `props.x` access, rest-spread forwarding; bails out when the props object escapes whole):
+  - Prop accepted (required props included) but never read and never forwarded (`unconsumed`).
+  - Callback prop passed by parents but never referenced by the component (`callback-never-invoked`).
+  - Destructuring default never exercised — every non-test callsite passes a value whose type excludes `undefined` (`default-never-used`).
 
 ## Next: See the whole program
 

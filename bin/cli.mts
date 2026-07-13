@@ -57,6 +57,9 @@ function subdued(text: string): string {
 function kindTag(kind: Finding['kind']): string {
   if (kind === 'never') return color(31, '[never]');
   if (kind === 'tests-only') return color(35, '[tests-only]');
+  if (kind === 'unconsumed') return color(31, '[unconsumed]');
+  if (kind === 'callback-never-invoked') return color(31, '[callback-never-invoked]');
+  if (kind === 'default-never-used') return color(33, '[default-never-used]');
   if (kind === 'always') return color(33, '[always]');
   if (kind === 'boolean-never-true') return color(34, '[bool-never-true]');
   if (kind === 'boolean-never-false') return color(34, '[bool-never-false]');
@@ -67,6 +70,11 @@ function kindTag(kind: Finding['kind']): string {
 function findingStatus(f: Finding): string {
   if (f.kind === 'never') return 'never passed by any parent';
   if (f.kind === 'tests-only') return 'only passed from test/story files';
+  if (f.kind === 'unconsumed') return 'accepted but never read or forwarded by the component body';
+  if (f.kind === 'callback-never-invoked') return 'callback passed by parents but never referenced by the component';
+  if (f.kind === 'default-never-used') {
+    return `destructuring default never exercised (all ${f.nonTestRenderSites} non-test render site(s) pass a defined value)`;
+  }
   if (f.kind === 'always') {
     return `passed by every non-test parent (${f.nonTestRenderSites} non-test render site(s))`;
   }

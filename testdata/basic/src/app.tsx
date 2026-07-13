@@ -2,19 +2,27 @@ import {
   Alive,
   AlwaysOptional,
   BoolOneSided,
+  Callbacks,
   Dead,
+  DefaultDead,
+  DefaultMaybe,
   Indirect,
   Inherit,
   Kids,
+  OpaqueBody,
   OpaqueTarget,
+  RestForward,
   SpreadTarget,
   Suppressed,
   TestsOnly,
+  Unconsumed,
   UnionMode,
   Wrapped,
 } from './components';
 
 const spreadProps: { covered?: string } = { covered: 'x' };
+declare function getMaybeSize(): number | undefined;
+const definedSize: number = 5;
 // biome-ignore lint: intentional `any` to exercise the opaque-spread path
 const loose = { anything: 'x' } as any;
 
@@ -47,6 +55,16 @@ export function App() {
       <UnionMode mode="off" />
       <UnionMode mode="on" />
       <UnionMode />
+      <Unconsumed used="u" ignored={1} />
+      <Callbacks label="l" onDead={() => {}} onUsed={() => {}} onForwarded={() => {}} />
+      <RestForward picked="x" forwarded="y" />
+      <OpaqueBody mystery="m" />
+      <DefaultDead size={1} />
+      <DefaultDead size={2} />
+      <DefaultDead size={definedSize} />
+      <DefaultMaybe size={getMaybeSize()} />
+      <DefaultMaybe size={4} />
+      <DefaultMaybe size={5} />
     </div>
   );
 }
