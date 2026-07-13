@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "target": "es2020",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "noEmit": true,
+    "types": [],
+    "lib": ["es2020", "dom"]
+  },
+  "include": ["src"],
+  "references": [{ "path": "../ui" }]
+}

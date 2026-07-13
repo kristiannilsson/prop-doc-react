@@ -238,6 +238,34 @@ test('flags dead union variants for optional props', () => {
   assert.deepEqual(finding.missingVariants, ['auto']);
 });
 
+const uiTsconfig = path.join(pkgRoot, 'testdata', 'monorepo', 'ui', 'tsconfig.json');
+const appTsconfig = path.join(pkgRoot, 'testdata', 'monorepo', 'app', 'tsconfig.json');
+
+test('a package analyzed alone misses render sites in sibling packages', () => {
+  const uiAlone = analyzeProject(uiTsconfig);
+  const buttonProps = uiAlone.findings.filter((f) => f.component === 'Button').map((f) => f.prop);
+  // Only the app passes `tone`, and ui alone can't see the app.
+  assert.ok(buttonProps.includes('tone'));
+});
+
+test('multiple tsconfig paths merge into one program with cross-package visibility', () => {
+  const both = analyzeProject([uiTsconfig, appTsconfig]);
+  assert.ok(!both.findings.some((f) => f.prop === 'tone'), 'tone is passed by the app');
+  assert.ok(
+    both.findings.some((f) => f.component === 'Button' && f.prop === 'ghost' && f.kind === 'never'),
+    'ghost is never passed anywhere',
+  );
+});
+
+test('project references are followed automatically', () => {
+  const app = analyzeProject(appTsconfig);
+  // `tone` is passed right there in the app.
+  assert.ok(!app.findings.some((f) => f.prop === 'tone'));
+  // extra.tsx is never imported by the app; only the followed reference to
+  // the ui tsconfig brings it into the program.
+  assert.ok(app.findings.some((f) => f.component === 'Unreferenced' && f.prop === 'lonely' && f.kind === 'never'));
+});
+
 test('throws a useful error for a missing tsconfig', () => {
   assert.throws(
     () => analyzeProject(path.join(pkgRoot, 'testdata', 'nope', 'tsconfig.json')),

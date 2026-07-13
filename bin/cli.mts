@@ -6,14 +6,17 @@ import { ALL_FINDING_KINDS, DEFAULT_MIN_SITES, analyzeProject } from '../lib/ana
 import { BaselineError, DEFAULT_BASELINE_PATH, loadBaseline, writeBaseline } from '../lib/baseline.mjs';
 import type { AnalyzeResult, Finding, FindingKind } from '../lib/analyzer/types.mjs';
 
-const HELP = `Usage: prop-doc [tsconfig path] [options]
+const HELP = `Usage: prop-doc [tsconfig paths...] [options]
 
 Finds React prop-API drift: dead optional props, props the component body
 never reads, never-invoked callbacks, one-sided booleans, dead union
 variants, and dead destructuring defaults.
 
 Arguments:
-  tsconfig path              defaults to ./tsconfig.json
+  tsconfig paths             one or more tsconfig.json paths, merged into one
+                             program so cross-package render sites are visible
+                             (default: ./tsconfig.json); TypeScript project
+                             references are followed automatically
 
 Options:
   --json                     machine-readable output
@@ -143,11 +146,11 @@ for (let i = 0; i < args.length; i++) {
   else usageError(`Unknown option: ${arg}`);
 }
 
-const tsconfigPath = positional[0] ?? 'tsconfig.json';
+const tsconfigPaths = positional.length > 0 ? positional : ['tsconfig.json'];
 
 let result: AnalyzeResult;
 try {
-  result = analyzeProject(tsconfigPath, { includeTestComponents, rules, minSites });
+  result = analyzeProject(tsconfigPaths, { includeTestComponents, rules, minSites });
 } catch (error) {
   const message = error instanceof Error ? error.message : String(error);
   console.error(message);

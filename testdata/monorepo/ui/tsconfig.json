@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "target": "es2020",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "composite": true,
+    "declaration": true,
+    "outDir": "dist",
+    "types": [],
+    "lib": ["es2020", "dom"]
+  },
+  "include": ["src"]
+}

@@ -23,17 +23,7 @@ export interface AnalyzeOptions {
   minSites?: number;
 }
 
-export function analyzeProject(
-  tsconfigPath: string,
-  { includeTestComponents = false, rules, minSites }: AnalyzeOptions = {},
-): AnalyzeResult {
-  if (typeof ts.createProgram !== 'function') {
-    throw new Error(
-      `The resolved 'typescript' package (${ts.version ?? 'unknown'}) has no compiler API; TypeScript 5.x is required.`,
-    );
-  }
-
-  const configPath = path.resolve(tsconfigPath);
+function parseConfig(configPath: string): ts.ParsedCommandLine {
   let configError: Error | undefined;
   const parsed = ts.getParsedCommandLineOfConfigFile(
     configPath,
@@ -45,20 +35,65 @@ export function analyzeProject(
       },
     },
   );
-
   if (configError || !parsed) {
     throw configError ?? new Error(`Could not parse ${configPath}`);
   }
+  return parsed;
+}
 
-  const program = ts.createProgram({ rootNames: parsed.fileNames, options: parsed.options });
+const normPath = (p: string): string => p.replaceAll('\\', '/').toLowerCase();
+
+export function analyzeProject(
+  tsconfigPath: string | string[],
+  { includeTestComponents = false, rules, minSites }: AnalyzeOptions = {},
+): AnalyzeResult {
+  if (typeof ts.createProgram !== 'function') {
+    throw new Error(
+      `The resolved 'typescript' package (${ts.version ?? 'unknown'}) has no compiler API; TypeScript 5.x is required.`,
+    );
+  }
+
+  const initialPaths = Array.isArray(tsconfigPath) ? tsconfigPath : [tsconfigPath];
+  if (initialPaths.length === 0) throw new Error('At least one tsconfig path is required.');
+
+  // Load every given config plus, recursively, its project references, so
+  // render sites across monorepo package boundaries land in one program.
+  const configs: { path: string; parsed: ts.ParsedCommandLine }[] = [];
+  const queue = initialPaths.map((p) => path.resolve(p));
+  const visited = new Set<string>();
+  while (queue.length > 0) {
+    const configPath = queue.shift() as string;
+    if (visited.has(normPath(configPath))) continue;
+    visited.add(normPath(configPath));
+    const parsed = parseConfig(configPath);
+    configs.push({ path: configPath, parsed });
+    for (const ref of parsed.projectReferences ?? []) {
+      queue.push(ts.resolveProjectReferencePath(ref));
+    }
+  }
+
+  const rootNames = [...new Set(configs.flatMap((c) => c.parsed.fileNames))];
+  // One merged program; the first config's compiler options govern. The
+  // referenced projects' SOURCES are included as root files directly —
+  // deliberately not passed as projectReferences, which would make TS treat
+  // them as external inputs behind their (possibly unbuilt) declaration
+  // outputs and drop them from the program.
+  const program = ts.createProgram({
+    rootNames,
+    options: configs[0].parsed.options,
+  });
   const checker = program.getTypeChecker();
   const isProjectFile = (sf: ts.SourceFile): boolean =>
     !sf.isDeclarationFile && !sf.fileName.includes('node_modules');
-  // Classify test files by their path *within* the project, so a repo that
-  // itself lives under a /test/ or /fixtures/ directory isn't misclassified.
-  const configDir = path.dirname(configPath);
-  const isTestFile = (fileName: string): boolean =>
-    TEST_FILE_RE.test(path.relative(configDir, fileName));
+  // Classify test files by their path *within* the nearest project, so a repo
+  // that itself lives under a /test/ or /fixtures/ directory isn't
+  // misclassified.
+  const configDirs = configs.map((c) => path.dirname(c.path)).sort((a, b) => b.length - a.length);
+  const isTestFile = (fileName: string): boolean => {
+    const normalized = normPath(fileName);
+    const dir = configDirs.find((d) => normalized.startsWith(`${normPath(d)}/`)) ?? configDirs[0];
+    return TEST_FILE_RE.test(path.relative(dir, fileName));
+  };
 
   const { components, componentsByDecl, componentNames } = collectComponents({
     program,

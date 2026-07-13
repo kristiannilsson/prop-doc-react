@@ -20,10 +20,10 @@ See [ROADMAP.md](ROADMAP.md) for planned rules and priorities.
 ## Usage
 
 ```sh
-npx @kristiannilsson/prop-doc-react [path/to/tsconfig.json]
+npx @kristiannilsson/prop-doc-react [path/to/tsconfig.json ...]
 ```
 
-Defaults to `./tsconfig.json`.
+Defaults to `./tsconfig.json`. Multiple tsconfig paths merge into one program so cross-package render sites in a monorepo are visible, and TypeScript project references are followed automatically. (Cross-package imports must resolve to sources — relative paths or `paths` aliases.)
 
 ```
 Definite Findings (4)
