@@ -19,6 +19,30 @@ Options:
   --help                     show this help
 `;
 
+const useColor = process.stdout.isTTY && !process.env.NO_COLOR;
+
+function color(code: number, text: string): string {
+  return useColor ? `\x1b[${code}m${text}\x1b[0m` : text;
+}
+
+function heading(text: string): string {
+  return color(36, text);
+}
+
+function subdued(text: string): string {
+  return color(90, text);
+}
+
+function kindTag(kind: Finding['kind']): string {
+  if (kind === 'never') return color(31, '[never]');
+  if (kind === 'tests-only') return color(35, '[tests-only]');
+  if (kind === 'always') return color(33, '[always]');
+  if (kind === 'boolean-never-true') return color(34, '[bool-never-true]');
+  if (kind === 'boolean-never-false') return color(34, '[bool-never-false]');
+  if (kind === 'union-variant-never') return color(34, '[union-variant-never]');
+  return `[${kind}]`;
+}
+
 function findingStatus(f: Finding): string {
   if (f.kind === 'never') return 'never passed by any parent';
   if (f.kind === 'tests-only') return 'only passed from test/story files';
@@ -65,6 +89,30 @@ const { findings, skipped, componentsAnalyzed } = result;
 const cwd = process.cwd();
 const rel = (fileName: string): string => path.relative(cwd, fileName).replaceAll('\\', '/');
 
+function printFindingSection(title: string, sectionFindings: Finding[]): void {
+  if (sectionFindings.length === 0) return;
+
+  console.log(`\n${heading(title)} ${subdued(`(${sectionFindings.length})`)}`);
+
+  let currentFile: string | undefined;
+  let currentComponent: string | undefined;
+
+  for (const finding of sectionFindings) {
+    if (rel(finding.file) !== currentFile) {
+      currentFile = rel(finding.file);
+      currentComponent = undefined;
+      console.log(`\n${subdued(currentFile)}`);
+    }
+    if (finding.component !== currentComponent) {
+      currentComponent = finding.component;
+      const confidence = finding.lowConfidence ? ' [low confidence: also referenced as a value]' : '';
+      console.log(`  <${finding.component}> — ${finding.renderSites} render site(s)${confidence}`);
+    }
+    const tag = kindTag(finding.kind);
+    console.log(`    ${finding.prop.padEnd(28)} ${tag} ${findingStatus(finding)}`);
+  }
+}
+
 if (asJson) {
   console.log(
     JSON.stringify(
@@ -86,25 +134,14 @@ if (asJson) {
     ),
   );
 } else {
-  let currentFile: string | undefined;
-  let currentComponent: string | undefined;
+  const definiteFindings = findings.filter((f) => !f.lowConfidence);
+  const advisoryFindings = findings.filter((f) => f.lowConfidence);
 
-  for (const finding of findings) {
-    if (rel(finding.file) !== currentFile) {
-      currentFile = rel(finding.file);
-      currentComponent = undefined;
-      console.log(`\n${currentFile}`);
-    }
-    if (finding.component !== currentComponent) {
-      currentComponent = finding.component;
-      const confidence = finding.lowConfidence ? ' [low confidence: also referenced as a value]' : '';
-      console.log(`  <${finding.component}> — ${finding.renderSites} render site(s)${confidence}`);
-    }
-    console.log(`    ${finding.prop.padEnd(28)} ${findingStatus(finding)}`);
-  }
+  printFindingSection('Definite Findings', definiteFindings);
+  printFindingSection('Advisory Findings', advisoryFindings);
 
   if (verbose && skipped.length > 0) {
-    console.log('\nSkipped (untyped/index-signature spread could pass anything):');
+    console.log(`\n${heading('Skipped Components')} ${subdued('(opaque spread may pass any prop)')}`);
     for (const entry of skipped) console.log(`  <${entry.component}> in ${rel(entry.file)}`);
   }
 

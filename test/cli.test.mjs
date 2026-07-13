@@ -26,19 +26,21 @@ test('--json emits parseable findings and exits 1 on definite findings', () => {
 test('human output groups findings per component', () => {
   const { status, stdout } = run(fixtureTsconfig);
   assert.equal(status, 1);
+  assert.match(stdout, /Definite Findings \(/);
+  assert.match(stdout, /Advisory Findings \(/);
   assert.match(stdout, /<Dead> — 1 render site\(s\)/);
-  assert.match(stdout, /dead\s+never passed by any parent/);
-  assert.match(stdout, /flag\s+only passed from test\/story files/);
-  assert.match(stdout, /always\s+passed by every non-test parent/);
-  assert.match(stdout, /enabled\s+boolean is only ever passed true when provided/);
-  assert.match(stdout, /mode\s+union variant\(s\) never passed: auto/);
+  assert.match(stdout, /dead\s+\[never\]\s+never passed by any parent/);
+  assert.match(stdout, /flag\s+\[tests-only\]\s+only passed from test\/story files/);
+  assert.match(stdout, /always\s+\[always\]\s+passed by every non-test parent/);
+  assert.match(stdout, /enabled\s+\[bool-never-false\]\s+boolean is only ever passed true when provided/);
+  assert.match(stdout, /mode\s+\[union-variant-never\]\s+union variant\(s\) never passed: auto/);
   assert.match(stdout, /<Indirect>.*\[low confidence/);
   assert.match(stdout, /definite\)\./);
 });
 
 test('--verbose lists components skipped for opaque spreads', () => {
   const { stdout } = run(fixtureTsconfig, '--verbose');
-  assert.match(stdout, /Skipped \(untyped\/index-signature spread/);
+  assert.match(stdout, /Skipped Components \(opaque spread may pass any prop\)/);
   assert.match(stdout, /<OpaqueTarget>/);
 });
 
