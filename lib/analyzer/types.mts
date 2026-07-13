@@ -31,13 +31,19 @@ export interface PassStats {
   possiblyUndefinedInNonTest: boolean;
 }
 
+/** A literal member of a union prop type: `key` is type-tagged for matching, `label` is for display. */
+export interface UnionVariant {
+  key: string;
+  label: string;
+}
+
 export interface OwnPropMeta {
   name: string;
   optional: boolean;
   isBoolean: boolean;
   /** The prop's (non-nullable) type is callable. */
   isCallable: boolean;
-  unionVariants: string[];
+  unionVariants: UnionVariant[];
   /** Rules suppressed via `prop-doc-ignore` comments on the prop declaration. */
   suppressed: 'all' | Set<FindingKind> | undefined;
 }

@@ -1,12 +1,9 @@
 import type ts from 'typescript';
 import type { BodyUsage, ComponentRecord, TsApi } from './types.mjs';
 
-const OPAQUE: BodyUsage = {
-  opaque: true,
-  consumed: new Set(),
-  defaulted: new Set(),
-  restRemainders: [],
-};
+function opaqueUsage(): BodyUsage {
+  return { opaque: true, consumed: new Set(), defaulted: new Set(), restRemainders: [] };
+}
 
 export function isConsumed(usage: BodyUsage, propName: string): boolean {
   if (usage.opaque || usage.consumed.has(propName)) return true;
@@ -85,7 +82,7 @@ export function analyzeBodyUsage(
 ): BodyUsage {
   const fnNode = component.fnNode;
   const param = fnNode.parameters[0];
-  if (!param || !fnNode.body) return OPAQUE;
+  if (!param || !fnNode.body) return opaqueUsage();
 
   const usage: BodyUsage = { opaque: false, consumed: new Set(), defaulted: new Set(), restRemainders: [] };
   const identifiers = collectValueIdentifiers(fnNode, tsApi);
@@ -124,12 +121,12 @@ export function analyzeBodyUsage(
 
   if (tsApi.isObjectBindingPattern(param.name)) {
     processPattern(param.name);
-    return usage.opaque ? OPAQUE : usage;
+    return usage.opaque ? opaqueUsage() : usage;
   }
-  if (!tsApi.isIdentifier(param.name)) return OPAQUE;
+  if (!tsApi.isIdentifier(param.name)) return opaqueUsage();
 
   const paramSymbol = checker.getSymbolAtLocation(param.name);
-  if (!paramSymbol) return OPAQUE;
+  if (!paramSymbol) return opaqueUsage();
 
   for (const id of identifiers.get(param.name.text) ?? []) {
     if (id === param.name) continue;
@@ -151,9 +148,9 @@ export function analyzeBodyUsage(
       processPattern(parent.name);
     } else {
       // The props object escapes (aliased, spread, passed to a call, ...).
-      return OPAQUE;
+      return opaqueUsage();
     }
   }
 
-  return usage.opaque ? OPAQUE : usage;
+  return usage.opaque ? opaqueUsage() : usage;
 }

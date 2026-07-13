@@ -1,17 +1,16 @@
 #!/usr/bin/env node
 
-import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { ALL_FINDING_KINDS, DEFAULT_MIN_SITES, analyzeProject } from '../lib/analyze.mjs';
+import { BaselineError, DEFAULT_BASELINE_PATH, loadBaseline, writeBaseline } from '../lib/baseline.mjs';
 import type { AnalyzeResult, Finding, FindingKind } from '../lib/analyzer/types.mjs';
-
-const DEFAULT_BASELINE_PATH = '.prop-doc-baseline.json';
-const BASELINE_VERSION = 1;
 
 const HELP = `Usage: prop-doc [tsconfig path] [options]
 
-Finds optional props on React components that no parent ever passes.
+Finds React prop-API drift: dead optional props, props the component body
+never reads, never-invoked callbacks, one-sided booleans, dead union
+variants, and dead destructuring defaults.
 
 Arguments:
   tsconfig path              defaults to ./tsconfig.json
@@ -36,8 +35,9 @@ Suppress a finding at the source with a comment on the prop declaration:
   someProp?: string; // prop-doc-ignore            (all rules)
   someProp?: string; // prop-doc-ignore never      (specific rules)
 
-Exit codes: 1 if any new definite high-confidence finding (never, tests-only),
-0 if clean or only advisory/low-confidence/baselined findings, 2 on usage errors.
+Exit codes: 1 if any new definite high-confidence finding (never, tests-only,
+unconsumed, callback-never-invoked), 0 if clean or only advisory/low-confidence/
+baselined findings, 2 on usage errors.
 `;
 
 const useColor = process.stdout.isTTY && !process.env.NO_COLOR;
@@ -103,7 +103,7 @@ let includeTestComponents = false;
 let rules: FindingKind[] | undefined;
 let minSites: number | undefined;
 let baselinePath: string | undefined;
-let writeBaseline = false;
+let writeBaselineMode = false;
 const positional: string[] = [];
 
 for (let i = 0; i < args.length; i++) {
@@ -135,7 +135,7 @@ for (let i = 0; i < args.length; i++) {
     if (!Number.isInteger(n) || n < 1) usageError('--min-sites requires a positive integer');
     minSites = n;
   } else if (flag === '--baseline') baselinePath = takeValue();
-  else if (flag === '--write-baseline') writeBaseline = true;
+  else if (flag === '--write-baseline') writeBaselineMode = true;
   else usageError(`Unknown option: ${arg}`);
 }
 
@@ -155,60 +155,18 @@ const { findings, skipped, componentsAnalyzed } = result;
 const cwd = process.cwd();
 const rel = (fileName: string): string => path.relative(cwd, fileName).replaceAll('\\', '/');
 
-// Baseline entries store paths relative to the baseline file so the file can
-// be committed and used regardless of the invocation directory.
-const resolvedBaseline = path.resolve(baselinePath ?? DEFAULT_BASELINE_PATH);
-const baselineDir = path.dirname(resolvedBaseline);
-const baselineFile = (f: Finding): string =>
-  path.relative(baselineDir, f.file).replaceAll('\\', '/');
-const baselineKey = (f: Finding): string =>
-  [baselineFile(f), f.component, f.prop, f.kind].join('|');
-
-if (writeBaseline) {
-  const entries = findings.map((f) => ({
-    file: baselineFile(f),
-    component: f.component,
-    prop: f.prop,
-    kind: f.kind,
-  }));
-  try {
-    fs.writeFileSync(
-      resolvedBaseline,
-      `${JSON.stringify({ version: BASELINE_VERSION, findings: entries }, null, 2)}\n`,
-    );
-  } catch (error) {
-    console.error(
-      `Could not write baseline file ${resolvedBaseline}: ${error instanceof Error ? error.message : String(error)}`,
-    );
-    process.exit(2);
+let isBaselined = (_f: Finding): boolean => false;
+try {
+  if (writeBaselineMode) {
+    const { resolvedPath, count } = writeBaseline(baselinePath ?? DEFAULT_BASELINE_PATH, findings);
+    console.log(`Wrote ${count} finding(s) to ${rel(resolvedPath)}.`);
+    process.exit(0);
   }
-  console.log(`Wrote ${entries.length} finding(s) to ${rel(resolvedBaseline)}.`);
-  process.exit(0);
+  if (baselinePath !== undefined) isBaselined = loadBaseline(baselinePath);
+} catch (error) {
+  if (error instanceof BaselineError) usageError(error.message);
+  throw error;
 }
-
-let baselined = new Set<string>();
-if (baselinePath !== undefined) {
-  let raw: string;
-  try {
-    raw = fs.readFileSync(resolvedBaseline, 'utf8');
-  } catch {
-    usageError(`Could not read baseline file: ${baselinePath} (create one with --write-baseline)`);
-  }
-  let parsedBaseline: { version?: number; findings?: { file: string; component: string; prop: string; kind: string }[] };
-  try {
-    parsedBaseline = JSON.parse(raw);
-  } catch {
-    usageError(`Baseline file is not valid JSON: ${baselinePath}`);
-  }
-  if (parsedBaseline.version !== BASELINE_VERSION || !Array.isArray(parsedBaseline.findings)) {
-    usageError(`Unsupported baseline file format in ${baselinePath}; regenerate with --write-baseline`);
-  }
-  baselined = new Set(
-    parsedBaseline.findings.map((e) => [e.file, e.component, e.prop, e.kind].join('|')),
-  );
-}
-
-const isBaselined = (f: Finding): boolean => baselined.has(baselineKey(f));
 
 // Only NEW dead-code findings the analysis is sure about fail the CI gate;
 // advisory rules, low-confidence findings, and baselined findings never

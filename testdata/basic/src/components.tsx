@@ -145,6 +145,15 @@ export function DefaultMaybe({ size = 10 }: DefaultMaybeProps) {
   return <div>{size}</div>;
 }
 
+interface UnionCollideProps {
+  // Passed only as boolean `true` (bare attribute); the string variants must
+  // NOT be marked as seen just because String(true) === 'true'.
+  flag?: 'true' | 'false';
+}
+export function UnionCollide(props: UnionCollideProps) {
+  return <div>{props.flag}</div>;
+}
+
 interface OpaqueBodyProps {
   mystery?: string; // props object escapes -> consumption rules stay silent
 }

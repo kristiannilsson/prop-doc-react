@@ -1,6 +1,6 @@
 import type ts from 'typescript';
 import type { ComponentRecord, LiteralValue, PassStats, TsApi } from './types.mjs';
-import { TEST_FILE_RE } from './constants.mjs';
+import { literalKey } from './constants.mjs';
 
 interface CollectUsagesArgs {
   program: ts.Program;
@@ -8,6 +8,7 @@ interface CollectUsagesArgs {
   componentsByDecl: Map<ts.Declaration, ComponentRecord>;
   componentNames: Set<string>;
   isProjectFile: (sf: ts.SourceFile) => boolean;
+  isTestFile: (fileName: string) => boolean;
   ts: TsApi;
 }
 
@@ -157,7 +158,7 @@ function recordPassed(
 
   if (options.literal === true) stats.trueCount += 1;
   if (options.literal === false) stats.falseCount += 1;
-  stats.literalValues.add(String(options.literal));
+  stats.literalValues.add(literalKey(options.literal));
 }
 
 export function collectUsages({
@@ -166,6 +167,7 @@ export function collectUsages({
   componentsByDecl,
   componentNames,
   isProjectFile,
+  isTestFile,
   ts: tsApi,
 }: CollectUsagesArgs): void {
   function recordRenderSite(
@@ -184,8 +186,8 @@ export function collectUsages({
     if (!component) return;
 
     component.renderSites += 1;
-    const isTestFile = TEST_FILE_RE.test(sf.fileName);
-    if (!isTestFile) component.renderSitesNonTest += 1;
+    const inTestFile = isTestFile(sf.fileName);
+    if (!inTestFile) component.renderSitesNonTest += 1;
 
     for (const attr of attributes.properties) {
       if (tsApi.isJsxAttribute(attr)) {
@@ -203,7 +205,7 @@ export function collectUsages({
           );
         }
         recordPassed(component, attr.name.getText(sf), sf.fileName, {
-          isTestFile,
+          isTestFile: inTestFile,
           siteId,
           literal,
           possiblyUndefined,
@@ -217,7 +219,7 @@ export function collectUsages({
           } else {
             for (const prop of member.getProperties()) {
               recordPassed(component, prop.name, sf.fileName, {
-                isTestFile,
+                isTestFile: inTestFile,
                 siteId,
                 fromSpread: true,
               });
@@ -229,7 +231,7 @@ export function collectUsages({
 
     if (childrenPassed) {
       recordPassed(component, 'children', sf.fileName, {
-        isTestFile,
+        isTestFile: inTestFile,
         siteId,
         possiblyUndefined: false,
       });

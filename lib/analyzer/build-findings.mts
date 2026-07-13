@@ -7,9 +7,10 @@ import type {
   OwnPropMeta,
   SkippedComponent,
   TsApi,
+  UnionVariant,
 } from './types.mjs';
 import { analyzeBodyUsage, isConsumed } from './analyze-body.mjs';
-import { TEST_FILE_RE } from './constants.mjs';
+import { literalKey } from './constants.mjs';
 
 export const FINDING_SEVERITY: Record<FindingKind, FindingSeverity> = {
   never: 'definite',
@@ -31,33 +32,37 @@ interface BuildFindingsArgs {
   components: ComponentRecord[];
   checker: ts.TypeChecker;
   isProjectFile: (sf: ts.SourceFile) => boolean;
+  isTestFile: (fileName: string) => boolean;
   includeTestComponents: boolean;
   enabledRules?: FindingKind[];
   minSites?: number;
   ts: TsApi;
 }
 
+function nonNullableMembers(type: ts.UnionType, tsApi: TsApi): ts.Type[] {
+  return type.types.filter(
+    (t) => (t.flags & (tsApi.TypeFlags.Undefined | tsApi.TypeFlags.Null)) === 0,
+  );
+}
+
 function isBooleanLike(type: ts.Type, tsApi: TsApi): boolean {
   if (type.flags & tsApi.TypeFlags.BooleanLike) return true;
   if (!type.isUnion()) return false;
-  const relevant = type.types.filter(
-    (t) => (t.flags & (tsApi.TypeFlags.Undefined | tsApi.TypeFlags.Null)) === 0,
-  );
+  const relevant = nonNullableMembers(type, tsApi);
   return relevant.length > 0 && relevant.every((t) => (t.flags & tsApi.TypeFlags.BooleanLike) !== 0);
 }
 
-function unionLiteralVariants(type: ts.Type, tsApi: TsApi): string[] {
+function unionLiteralVariants(type: ts.Type, tsApi: TsApi): UnionVariant[] {
   if (!type.isUnion()) return [];
-  const values: string[] = [];
-  const relevant = type.types.filter(
-    (t) => (t.flags & (tsApi.TypeFlags.Undefined | tsApi.TypeFlags.Null)) === 0,
-  );
-  for (const member of relevant) {
-    if (member.isStringLiteral()) values.push(member.value);
-    else if (member.isNumberLiteral()) values.push(String(member.value));
+  const variants = new Map<string, UnionVariant>();
+  for (const member of nonNullableMembers(type, tsApi)) {
+    let value: string | number;
+    if (member.isStringLiteral()) value = member.value;
+    else if (member.isNumberLiteral()) value = member.value;
     else return [];
+    variants.set(literalKey(value), { key: literalKey(value), label: String(value) });
   }
-  return [...new Set(values)].sort();
+  return [...variants.values()].sort((a, b) => a.label.localeCompare(b.label));
 }
 
 const IGNORE_MARKER_RE = /\bprop-doc-ignore\b(.*)/;
@@ -146,6 +151,7 @@ export function buildFindings({
   components,
   checker,
   isProjectFile,
+  isTestFile,
   includeTestComponents,
   enabledRules,
   minSites = DEFAULT_MIN_SITES,
@@ -161,7 +167,7 @@ export function buildFindings({
 
   for (const component of components) {
     if (component.renderSites === 0) continue;
-    if (!includeTestComponents && TEST_FILE_RE.test(component.sourceFile.fileName)) continue;
+    if (!includeTestComponents && isTestFile(component.sourceFile.fileName)) continue;
 
     if (component.opaqueSpreadFiles.size > 0) {
       skipped.push({
@@ -216,7 +222,7 @@ export function buildFindings({
         continue;
       }
 
-      if (active('tests-only') && [...passedStats.files].every((f) => TEST_FILE_RE.test(f))) {
+      if (active('tests-only') && [...passedStats.files].every((f) => isTestFile(f))) {
         push({ ...base, kind: 'tests-only', testFiles: [...passedStats.files].sort() });
       }
 
@@ -253,14 +259,14 @@ export function buildFindings({
         passedStats.nonTestSites.size >= minSites &&
         !passedStats.unknownValueInNonTest
       ) {
-        const seen = prop.unionVariants.filter((v) => passedStats.literalValues.has(v));
-        const missing = prop.unionVariants.filter((v) => !passedStats.literalValues.has(v));
+        const seen = prop.unionVariants.filter((v) => passedStats.literalValues.has(v.key));
+        const missing = prop.unionVariants.filter((v) => !passedStats.literalValues.has(v.key));
         if (missing.length > 0) {
           push({
             ...base,
             kind: 'union-variant-never',
-            seenVariants: seen,
-            missingVariants: missing,
+            seenVariants: seen.map((v) => v.label),
+            missingVariants: missing.map((v) => v.label),
           });
         }
       }

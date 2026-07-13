@@ -45,8 +45,3 @@ Implemented and shipping:
 ## Non-goals
 
 - ESLint plugin packaging: the analysis is inherently whole-program and fights ESLint's per-file model. The standalone CLI with stable JSON output is the integration surface.
-
-## Known fixes (not roadmap items, just tracked)
-
-- Test-file classification should test paths *relative to the tsconfig directory*, so a repo living under a `/test/` or `/fixtures/` path segment isn't misclassified wholesale.
-- Literal-value tracking should key by type so boolean `true` and string `"true"` union variants don't collide.

@@ -118,7 +118,22 @@ test('excludes components defined in test files by default', () => {
 });
 
 test('counts all components with a props parameter, including test-file ones', () => {
-  assert.equal(result.componentsAnalyzed, 21);
+  assert.equal(result.componentsAnalyzed, 22);
+});
+
+test('boolean true does not count as the string variant "true"', () => {
+  const [finding] = findingsFor('UnionCollide').filter((f) => f.kind === 'union-variant-never');
+  assert.ok(finding);
+  assert.deepEqual(finding.seenVariants, []);
+  assert.deepEqual(finding.missingVariants, ['false', 'true']);
+});
+
+test('classifies test files relative to the tsconfig directory, not the absolute path', () => {
+  // This fixture lives under testdata/fixtures/, which the test-file regex
+  // matches; only paths *inside* the project may trigger classification.
+  const mini = analyzeProject(path.join(pkgRoot, 'testdata', 'fixtures', 'mini', 'tsconfig.json'));
+  const kinds = mini.findings.map((f) => `${f.component}.${f.prop}:${f.kind}`);
+  assert.ok(kinds.includes('Mini.dead:never'), `expected a finding, got [${kinds.join(', ')}]`);
 });
 
 test('flags props (required included) the body never reads or forwards', () => {

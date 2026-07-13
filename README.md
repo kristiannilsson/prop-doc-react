@@ -99,7 +99,6 @@ const { findings, skipped, componentsAnalyzed } = analyzeProject('tsconfig.json'
 
 - `React.createElement` calls and class components aren't analyzed.
 - Render sites are matched per JSX tag; a prop threaded through render-prop plumbing to a low-confidence component may still be a false positive — hence the marker.
-- A repo living under a path containing a `/test/` or `/fixtures/` segment will have its files misclassified as test files.
 
 ## License
 

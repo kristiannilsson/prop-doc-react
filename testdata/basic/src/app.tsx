@@ -16,6 +16,7 @@ import {
   Suppressed,
   TestsOnly,
   Unconsumed,
+  UnionCollide,
   UnionMode,
   Wrapped,
 } from './components';
@@ -56,6 +57,10 @@ export function App() {
       <UnionMode mode="on" />
       <UnionMode />
       <Unconsumed used="u" ignored={1} />
+      {/* boolean true, not the string 'true' — a deliberate type error this fixture never typechecks */}
+      <UnionCollide flag />
+      <UnionCollide flag />
+      <UnionCollide flag />
       <Callbacks label="l" onDead={() => {}} onUsed={() => {}} onForwarded={() => {}} />
       <RestForward picked="x" forwarded="y" />
       <OpaqueBody mystery="m" />

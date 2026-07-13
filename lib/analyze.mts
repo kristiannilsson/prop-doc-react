@@ -47,6 +47,11 @@ export function analyzeProject(
   const checker = program.getTypeChecker();
   const isProjectFile = (sf: ts.SourceFile): boolean =>
     !sf.isDeclarationFile && !sf.fileName.includes('node_modules');
+  // Classify test files by their path *within* the project, so a repo that
+  // itself lives under a /test/ or /fixtures/ directory isn't misclassified.
+  const configDir = path.dirname(configPath);
+  const isTestFile = (fileName: string): boolean =>
+    TEST_FILE_RE.test(path.relative(configDir, fileName));
 
   const { components, componentsByDecl, componentNames } = collectComponents({
     program,
@@ -60,6 +65,7 @@ export function analyzeProject(
     componentsByDecl,
     componentNames,
     isProjectFile,
+    isTestFile,
     ts,
   });
 
@@ -67,6 +73,7 @@ export function analyzeProject(
     components,
     checker,
     isProjectFile,
+    isTestFile,
     includeTestComponents,
     enabledRules: rules,
     minSites,
