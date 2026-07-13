@@ -7,6 +7,13 @@ import { TEST_FILE_RE } from './analyzer/constants.mjs';
 import type { AnalyzeResult, FindingKind } from './analyzer/types.mjs';
 
 export { ALL_FINDING_KINDS, DEFAULT_MIN_SITES, FINDING_SEVERITY, TEST_FILE_RE };
+export type {
+  AnalyzeResult,
+  Finding,
+  FindingKind,
+  FindingSeverity,
+  SkippedComponent,
+} from './analyzer/types.mjs';
 
 export interface AnalyzeOptions {
   includeTestComponents?: boolean;

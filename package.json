@@ -1,6 +1,6 @@
 {
   "name": "@kristiannilsson/prop-doc-react",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Analyze React prop contracts to find dead, over-optional, and unused variants.",
   "type": "module",
   "license": "MIT",
@@ -9,7 +9,10 @@
     "prop-doc": "dist/bin/cli.mjs"
   },
   "exports": {
-    ".": "./dist/lib/analyze.mjs"
+    ".": {
+      "types": "./dist/lib/analyze.d.mts",
+      "default": "./dist/lib/analyze.mjs"
+    }
   },
   "files": [
     "dist"
