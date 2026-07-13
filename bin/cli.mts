@@ -1,9 +1,13 @@
 #!/usr/bin/env node
 
+import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { ALL_FINDING_KINDS, DEFAULT_MIN_SITES, analyzeProject } from '../lib/analyze.mjs';
 import type { AnalyzeResult, Finding, FindingKind } from '../lib/analyzer/types.mjs';
+
+const DEFAULT_BASELINE_PATH = '.prop-doc-baseline.json';
+const BASELINE_VERSION = 1;
 
 const HELP = `Usage: prop-doc [tsconfig path] [options]
 
@@ -21,10 +25,19 @@ Options:
   --min-sites <n>            non-test sites required before statistical rules
                              (always, boolean one-sided, union variants) fire
                              (default: ${DEFAULT_MIN_SITES})
+  --baseline <path>          ignore findings recorded in this baseline file;
+                             only new findings are reported and gate the exit
+                             code (default path: ${DEFAULT_BASELINE_PATH})
+  --write-baseline           record the current findings to the baseline file
+                             and exit 0
   --help                     show this help
 
-Exit codes: 1 if any definite high-confidence finding (never, tests-only),
-0 if clean or only advisory/low-confidence findings, 2 on usage errors.
+Suppress a finding at the source with a comment on the prop declaration:
+  someProp?: string; // prop-doc-ignore            (all rules)
+  someProp?: string; // prop-doc-ignore never      (specific rules)
+
+Exit codes: 1 if any new definite high-confidence finding (never, tests-only),
+0 if clean or only advisory/low-confidence/baselined findings, 2 on usage errors.
 `;
 
 const useColor = process.stdout.isTTY && !process.env.NO_COLOR;
@@ -81,6 +94,8 @@ let verbose = false;
 let includeTestComponents = false;
 let rules: FindingKind[] | undefined;
 let minSites: number | undefined;
+let baselinePath: string | undefined;
+let writeBaseline = false;
 const positional: string[] = [];
 
 for (let i = 0; i < args.length; i++) {
@@ -111,7 +126,9 @@ for (let i = 0; i < args.length; i++) {
     const n = Number(takeValue());
     if (!Number.isInteger(n) || n < 1) usageError('--min-sites requires a positive integer');
     minSites = n;
-  } else usageError(`Unknown option: ${arg}`);
+  } else if (flag === '--baseline') baselinePath = takeValue();
+  else if (flag === '--write-baseline') writeBaseline = true;
+  else usageError(`Unknown option: ${arg}`);
 }
 
 const tsconfigPath = positional[0] ?? 'tsconfig.json';
@@ -127,12 +144,69 @@ try {
 
 const { findings, skipped, componentsAnalyzed } = result;
 
-// Only dead-code findings the analysis is sure about fail the CI gate;
-// advisory rules and low-confidence findings never affect the exit code.
-const gates = (f: Finding): boolean => f.severity === 'definite' && !f.lowConfidence;
-
 const cwd = process.cwd();
 const rel = (fileName: string): string => path.relative(cwd, fileName).replaceAll('\\', '/');
+
+// Baseline entries store paths relative to the baseline file so the file can
+// be committed and used regardless of the invocation directory.
+const resolvedBaseline = path.resolve(baselinePath ?? DEFAULT_BASELINE_PATH);
+const baselineDir = path.dirname(resolvedBaseline);
+const baselineFile = (f: Finding): string =>
+  path.relative(baselineDir, f.file).replaceAll('\\', '/');
+const baselineKey = (f: Finding): string =>
+  [baselineFile(f), f.component, f.prop, f.kind].join('|');
+
+if (writeBaseline) {
+  const entries = findings.map((f) => ({
+    file: baselineFile(f),
+    component: f.component,
+    prop: f.prop,
+    kind: f.kind,
+  }));
+  try {
+    fs.writeFileSync(
+      resolvedBaseline,
+      `${JSON.stringify({ version: BASELINE_VERSION, findings: entries }, null, 2)}\n`,
+    );
+  } catch (error) {
+    console.error(
+      `Could not write baseline file ${resolvedBaseline}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    process.exit(2);
+  }
+  console.log(`Wrote ${entries.length} finding(s) to ${rel(resolvedBaseline)}.`);
+  process.exit(0);
+}
+
+let baselined = new Set<string>();
+if (baselinePath !== undefined) {
+  let raw: string;
+  try {
+    raw = fs.readFileSync(resolvedBaseline, 'utf8');
+  } catch {
+    usageError(`Could not read baseline file: ${baselinePath} (create one with --write-baseline)`);
+  }
+  let parsedBaseline: { version?: number; findings?: { file: string; component: string; prop: string; kind: string }[] };
+  try {
+    parsedBaseline = JSON.parse(raw);
+  } catch {
+    usageError(`Baseline file is not valid JSON: ${baselinePath}`);
+  }
+  if (parsedBaseline.version !== BASELINE_VERSION || !Array.isArray(parsedBaseline.findings)) {
+    usageError(`Unsupported baseline file format in ${baselinePath}; regenerate with --write-baseline`);
+  }
+  baselined = new Set(
+    parsedBaseline.findings.map((e) => [e.file, e.component, e.prop, e.kind].join('|')),
+  );
+}
+
+const isBaselined = (f: Finding): boolean => baselined.has(baselineKey(f));
+
+// Only NEW dead-code findings the analysis is sure about fail the CI gate;
+// advisory rules, low-confidence findings, and baselined findings never
+// affect the exit code.
+const gates = (f: Finding): boolean =>
+  f.severity === 'definite' && !f.lowConfidence && !isBaselined(f);
 
 function printFindingSection(title: string, sectionFindings: Finding[]): void {
   if (sectionFindings.length === 0) return;
@@ -164,6 +238,7 @@ if (asJson) {
       {
         findings: findings.map((f) => ({
           ...f,
+          ...(baselinePath !== undefined ? { baselined: isBaselined(f) } : {}),
           file: rel(f.file),
           testFiles: f.testFiles?.map(rel),
         })),
@@ -179,20 +254,21 @@ if (asJson) {
     ),
   );
 } else {
-  const definiteFindings = findings.filter(gates);
-  const advisoryFindings = findings.filter((f) => !gates(f));
+  const shown = findings.filter((f) => !isBaselined(f));
+  const baselinedCount = findings.length - shown.length;
 
-  printFindingSection('Definite Findings', definiteFindings);
-  printFindingSection('Advisory Findings', advisoryFindings);
+  printFindingSection('Definite Findings', shown.filter(gates));
+  printFindingSection('Advisory Findings', shown.filter((f) => !gates(f)));
 
   if (verbose && skipped.length > 0) {
     console.log(`\n${heading('Skipped Components')} ${subdued('(opaque spread may pass any prop)')}`);
     for (const entry of skipped) console.log(`  <${entry.component}> in ${rel(entry.file)}`);
   }
 
+  const baselineNote = baselinePath === undefined ? '' : ` ${baselinedCount} baselined finding(s) hidden.`;
   console.log(
-    `\n${findings.length} finding(s) across ${new Set(findings.map((f) => `${f.file}:${f.component}`)).size} component(s)` +
-      ` (${findings.filter(gates).length} definite). ${componentsAnalyzed} components analyzed, ${skipped.length} skipped.`,
+    `\n${shown.length} finding(s) across ${new Set(shown.map((f) => `${f.file}:${f.component}`)).size} component(s)` +
+      ` (${shown.filter(gates).length} definite).${baselineNote} ${componentsAnalyzed} components analyzed, ${skipped.length} skipped.`,
   );
 }
 

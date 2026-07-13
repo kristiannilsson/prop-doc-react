@@ -56,6 +56,51 @@ function unionLiteralVariants(type: ts.Type, tsApi: TsApi): string[] {
   return [...new Set(values)].sort();
 }
 
+const IGNORE_MARKER_RE = /\bprop-doc-ignore\b(.*)/;
+
+function suppressionFromComment(commentText: string): 'all' | FindingKind[] | undefined {
+  const match = IGNORE_MARKER_RE.exec(commentText);
+  if (!match) return undefined;
+  const names = match[1]
+    .replace(/\*\/\s*$/, '')
+    .split(/[,\s]+/)
+    .filter(Boolean);
+  const kinds = names.filter((n): n is FindingKind => (ALL_FINDING_KINDS as string[]).includes(n));
+  return kinds.length > 0 ? kinds : 'all';
+}
+
+// A `prop-doc-ignore` comment on its own line above the prop declaration, or
+// trailing on the same line, suppresses all rules for that prop; naming rules
+// (`prop-doc-ignore never, always`) suppresses only those.
+function propSuppression(
+  prop: ts.Symbol,
+  isProjectFile: (sf: ts.SourceFile) => boolean,
+  tsApi: TsApi,
+): 'all' | Set<FindingKind> | undefined {
+  const kinds = new Set<FindingKind>();
+  for (const decl of prop.declarations ?? []) {
+    const sf = decl.getSourceFile();
+    if (!isProjectFile(sf)) continue;
+    const text = sf.text;
+    const fullStart = decl.getFullStart();
+    // Leading trivia also contains the previous line's trailing comment; only
+    // comments on lines below the previous token count as leading here.
+    const prevTokenLine = sf.getLineAndCharacterOfPosition(fullStart).line;
+    const ranges = [
+      ...(tsApi.getLeadingCommentRanges(text, fullStart) ?? []).filter(
+        (r) => sf.getLineAndCharacterOfPosition(r.pos).line > prevTokenLine,
+      ),
+      ...(tsApi.getTrailingCommentRanges(text, decl.getEnd()) ?? []),
+    ];
+    for (const range of ranges) {
+      const suppression = suppressionFromComment(text.slice(range.pos, range.end));
+      if (suppression === 'all') return 'all';
+      for (const kind of suppression ?? []) kinds.add(kind);
+    }
+  }
+  return kinds.size > 0 ? kinds : undefined;
+}
+
 function optionalOwnProps(
   component: ComponentRecord,
   checker: ts.TypeChecker,
@@ -77,6 +122,7 @@ function optionalOwnProps(
       name: prop.name,
       isBoolean: isBooleanLike(propType, tsApi),
       unionVariants: unionLiteralVariants(propType, tsApi),
+      suppressed: propSuppression(prop, isProjectFile, tsApi),
     });
   }
 
@@ -123,6 +169,9 @@ export function buildFindings({
 
     const lowConfidence = component.indirectRefFiles.size > 0;
     for (const prop of optionalOwnProps(component, checker, isProjectFile, tsApi)) {
+      if (prop.suppressed === 'all') continue;
+      const suppressed = prop.suppressed;
+      const active = (kind: FindingKind): boolean => ruleOn(kind) && !suppressed?.has(kind);
       const passedStats = component.passed.get(prop.name);
       const base = {
         component: component.name,
@@ -133,18 +182,18 @@ export function buildFindings({
       };
 
       if (!passedStats) {
-        if (ruleOn('never')) push({ ...base, kind: 'never' });
+        if (active('never')) push({ ...base, kind: 'never' });
         continue;
       }
 
-      if (ruleOn('tests-only') && [...passedStats.files].every((f) => TEST_FILE_RE.test(f))) {
+      if (active('tests-only') && [...passedStats.files].every((f) => TEST_FILE_RE.test(f))) {
         push({ ...base, kind: 'tests-only', testFiles: [...passedStats.files].sort() });
       }
 
       // The remaining rules are statistical: their evidence is a usage pattern
       // across sites, so they only fire once enough sites back the pattern.
       if (
-        ruleOn('always') &&
+        active('always') &&
         component.renderSitesNonTest >= minSites &&
         passedStats.nonTestSites.size === component.renderSitesNonTest
       ) {
@@ -160,16 +209,16 @@ export function buildFindings({
         passedStats.nonTestSites.size >= minSites &&
         !passedStats.unknownValueInNonTest
       ) {
-        if (ruleOn('boolean-never-false') && passedStats.trueCount > 0 && passedStats.falseCount === 0) {
+        if (active('boolean-never-false') && passedStats.trueCount > 0 && passedStats.falseCount === 0) {
           push({ ...base, kind: 'boolean-never-false' });
         }
-        if (ruleOn('boolean-never-true') && passedStats.falseCount > 0 && passedStats.trueCount === 0) {
+        if (active('boolean-never-true') && passedStats.falseCount > 0 && passedStats.trueCount === 0) {
           push({ ...base, kind: 'boolean-never-true' });
         }
       }
 
       if (
-        ruleOn('union-variant-never') &&
+        active('union-variant-never') &&
         prop.unionVariants.length > 1 &&
         passedStats.nonTestSites.size >= minSites &&
         !passedStats.unknownValueInNonTest

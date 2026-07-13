@@ -110,7 +110,17 @@ test('excludes components defined in test files by default', () => {
 });
 
 test('counts all components with a props parameter, including test-file ones', () => {
-  assert.equal(result.componentsAnalyzed, 14);
+  assert.equal(result.componentsAnalyzed, 15);
+});
+
+test('a bare prop-doc-ignore comment suppresses every rule for that prop', () => {
+  assert.ok(findingsFor('Suppressed').every((f) => f.prop !== 'quiet'));
+});
+
+test('a prop-doc-ignore comment naming rules only suppresses those rules', () => {
+  const loud = findingsFor('Suppressed').filter((f) => f.prop === 'loud');
+  assert.equal(loud.length, 1);
+  assert.equal(loud[0].kind, 'never');
 });
 
 test('returns findings sorted by file, component, prop', () => {
@@ -130,7 +140,7 @@ test('flags optional props always passed by non-test render sites', () => {
   const [finding] = findingsFor('AlwaysOptional').filter((f) => f.kind === 'always');
   assert.ok(finding);
   assert.equal(finding.prop, 'always');
-  assert.equal(finding.nonTestRenderSites, 2);
+  assert.equal(finding.nonTestRenderSites, 3);
 });
 
 test('flags one-sided boolean optional props', () => {

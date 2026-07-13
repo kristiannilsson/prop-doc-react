@@ -12,21 +12,11 @@ Implemented and shipping:
 - Optional boolean one-sided usage (true-only or false-only when provided).
 - Optional union literal variants never used.
 - Confidence modeling for opaque spreads and indirect component references.
-
-## Next: Make the CI gate usable
-
-The exit code currently treats every definite finding the same, but `never` (dead code) and `always` / one-sided booleans / dead union variants (API-design advice) differ in actionability. Fix this before promoting CI adoption:
-
-- Severity tiers per rule family (definite vs advisory), reflected in the exit code.
-- Rule-level flags to enable/disable checks independently.
-- Minimum render-site threshold for statistical rules (`always`, boolean one-sided, union variants) so "always passed" can't mean "passed once". Configurable, sensible default.
-
-## Next: Make adoption on existing codebases possible
-
-Any codebase old enough to benefit will have many findings on first run. Without a ratchet, the CI gate is unusable until a full cleanup happens:
-
-- Baseline file: record current findings, fail only on *new* ones.
-- Inline suppression comments (`// prop-doc-ignore`).
+- Severity tiers per rule family (definite vs advisory), reflected in the exit code: only high-confidence definite findings fail the gate.
+- Rule-level enable/disable via `--rules`.
+- Minimum render-site threshold for statistical rules (`always`, boolean one-sided, union variants) via `--min-sites` (default 3), so "always passed" can't mean "passed once".
+- Baseline file (`--write-baseline` / `--baseline`): record current findings, fail only on *new* ones — makes the CI gate adoptable on existing codebases without a full cleanup first.
+- Inline suppression comments on the prop declaration (`// prop-doc-ignore` or `// prop-doc-ignore <rule, ...>`).
 
 ## Next: Consumption analysis (the marquee rules)
 

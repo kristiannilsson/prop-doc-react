@@ -86,6 +86,17 @@ export function BoolOneSided(props: BoolOneSidedProps) {
   return <div>{String(props.enabled)}</div>;
 }
 
+interface SuppressedProps {
+  // prop-doc-ignore
+  quiet?: string;
+  loud?: boolean; // prop-doc-ignore always
+}
+// `quiet` is never passed but fully suppressed -> no finding.
+// `loud` is never passed and only suppresses 'always' -> 'never' still fires.
+export function Suppressed(props: SuppressedProps) {
+  return <div>{String(props.quiet ?? props.loud)}</div>;
+}
+
 interface UnionModeProps {
   mode?: 'on' | 'off' | 'auto'; // 'auto' is never passed -> 'union-variant-never' finding
 }

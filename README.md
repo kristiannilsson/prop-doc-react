@@ -36,15 +36,38 @@ src/components/booking-form/FormSection.tsx
 
 ### Options
 
-| Flag                          | Effect                                              |
-| ----------------------------- | --------------------------------------------------- |
-| `--json`                    | Machine-readable output                             |
-| `--verbose`                 | Also list components skipped due to untyped spreads |
-| `--include-test-components` | Analyze components defined in test/story files too  |
+| Flag                          | Effect                                                                 |
+| ----------------------------- | ---------------------------------------------------------------------- |
+| `--json`                    | Machine-readable output                                                |
+| `--verbose`                 | Also list components skipped due to untyped spreads                    |
+| `--include-test-components` | Analyze components defined in test/story files too                     |
+| `--rules <list>`            | Comma-separated rules to run (default: all)                            |
+| `--min-sites <n>`           | Non-test sites required before statistical rules fire (default: 3)     |
+| `--baseline <path>`         | Ignore findings recorded in the baseline; only new findings gate CI    |
+| `--write-baseline`          | Record the current findings to the baseline file and exit 0            |
+
+### Adopting on an existing codebase
+
+Record the findings you already have, then fail CI only on new ones:
+
+```sh
+npx @kristiannilsson/prop-doc-react --write-baseline   # commit .prop-doc-baseline.json
+npx @kristiannilsson/prop-doc-react --baseline .prop-doc-baseline.json
+```
+
+Individual findings can be suppressed at the source with a comment on the prop declaration — bare to suppress every rule for that prop, or naming specific rules:
+
+```ts
+interface Props {
+  // prop-doc-ignore
+  legacyProp?: string;
+  size?: 'sm' | 'md' | 'lg'; // prop-doc-ignore union-variant-never
+}
+```
 
 ### Exit codes
 
-`1` when definite findings exist (usable as a CI gate), `0` when clean or only low-confidence findings, `2` on usage/config errors.
+`1` when new definite findings exist (usable as a CI gate), `0` when clean or only advisory/low-confidence/baselined findings, `2` on usage/config errors.
 
 ### As a library
 

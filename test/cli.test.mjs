@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -70,6 +72,56 @@ test('invalid --rules and --min-sites values exit 2', () => {
   assert.equal(run(fixtureTsconfig, '--rules=bogus').status, 2);
   assert.equal(run(fixtureTsconfig, '--min-sites=0').status, 2);
   assert.equal(run(fixtureTsconfig, '--min-sites').status, 2);
+});
+
+test('--write-baseline then --baseline hides existing findings and exits 0', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'prop-doc-baseline-'));
+  const baseline = path.join(dir, 'baseline.json');
+  try {
+    const write = run(fixtureTsconfig, '--baseline', baseline, '--write-baseline');
+    assert.equal(write.status, 0);
+    assert.match(write.stdout, /Wrote \d+ finding\(s\)/);
+    const recorded = JSON.parse(fs.readFileSync(baseline, 'utf8'));
+    assert.equal(recorded.version, 1);
+    assert.ok(recorded.findings.length >= 5);
+
+    const gated = run(fixtureTsconfig, '--baseline', baseline);
+    assert.equal(gated.status, 0);
+    assert.match(gated.stdout, /baselined finding\(s\) hidden/);
+    assert.match(gated.stdout, /0 finding\(s\)/);
+
+    const asJson = run(fixtureTsconfig, '--baseline', baseline, '--json');
+    const report = JSON.parse(asJson.stdout);
+    assert.ok(report.findings.length > 0);
+    assert.ok(report.findings.every((f) => f.baselined === true));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('an empty baseline still fails on definite findings', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'prop-doc-baseline-'));
+  const baseline = path.join(dir, 'baseline.json');
+  try {
+    fs.writeFileSync(baseline, JSON.stringify({ version: 1, findings: [] }));
+    assert.equal(run(fixtureTsconfig, '--baseline', baseline).status, 1);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a missing or malformed baseline file exits 2', () => {
+  assert.equal(run(fixtureTsconfig, '--baseline', 'does-not-exist.json').status, 2);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'prop-doc-baseline-'));
+  const baseline = path.join(dir, 'baseline.json');
+  try {
+    fs.writeFileSync(baseline, 'not json');
+    assert.equal(run(fixtureTsconfig, '--baseline', baseline).status, 2);
+    fs.writeFileSync(baseline, JSON.stringify({ version: 99, findings: [] }));
+    assert.equal(run(fixtureTsconfig, '--baseline', baseline).status, 2);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('unknown flags exit 2', () => {

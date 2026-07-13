@@ -30,6 +30,8 @@ export interface OptionalPropMeta {
   name: string;
   isBoolean: boolean;
   unionVariants: string[];
+  /** Rules suppressed via `prop-doc-ignore` comments on the prop declaration. */
+  suppressed: 'all' | Set<FindingKind> | undefined;
 }
 
 export interface ComponentRecord {

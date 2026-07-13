@@ -8,6 +8,7 @@ import {
   Kids,
   OpaqueTarget,
   SpreadTarget,
+  Suppressed,
   TestsOnly,
   UnionMode,
   Wrapped,
@@ -33,6 +34,7 @@ export function App() {
       <TestsOnly />
       <Wrapped />
       <Indirect />
+      <Suppressed />
       {/* Statistical rules need >= 3 qualifying non-test sites (default --min-sites). */}
       <AlwaysOptional always="x" />
       <AlwaysOptional always="y" />
