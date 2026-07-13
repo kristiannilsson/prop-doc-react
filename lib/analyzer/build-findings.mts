@@ -23,7 +23,16 @@ export const FINDING_SEVERITY: Record<FindingKind, FindingSeverity> = {
   'union-variant-never': 'advisory',
   'default-never-used': 'advisory',
   'same-literal': 'advisory',
+  'passed-equals-default': 'advisory',
+  'type-wider-than-usage': 'advisory',
 };
+
+/** Render a type-tagged literal key for humans: strings quoted, the rest raw. */
+function displayLiteral(key: string): string {
+  return key.startsWith('string:')
+    ? JSON.stringify(key.slice('string:'.length))
+    : key.slice(key.indexOf(':') + 1);
+}
 
 export const ALL_FINDING_KINDS = Object.keys(FINDING_SEVERITY) as FindingKind[];
 
@@ -127,11 +136,16 @@ function ownProps(
     if (!declaredInProject) continue;
 
     const propType = checker.getTypeOfSymbolAtLocation(prop, param);
+    const nonNullable = checker.getNonNullableType(propType);
+    const wideFlags = tsApi.TypeFlags.String | tsApi.TypeFlags.Number;
     result.push({
       name: prop.name,
       optional: (prop.flags & tsApi.SymbolFlags.Optional) !== 0,
       isBoolean: isBooleanLike(propType, tsApi),
-      isCallable: checker.getNonNullableType(propType).getCallSignatures().length > 0,
+      isCallable: nonNullable.getCallSignatures().length > 0,
+      isWideStringOrNumber:
+        (nonNullable.flags & wideFlags) !== 0 ||
+        (nonNullable.isUnion() && nonNullable.types.every((t) => (t.flags & wideFlags) !== 0)),
       unionVariants: unionLiteralVariants(propType, tsApi),
       suppressed: propSuppression(prop, isProjectFile, tsApi),
     });
@@ -205,7 +219,28 @@ export function buildFindings({
         }
       }
 
+      // Value-pattern rules apply to required props too: statistical evidence
+      // needs enough sites, all with literal (or at least defined) values.
+      const literalSites =
+        passedStats !== undefined &&
+        passedStats.nonTestSites.size >= minSites &&
+        !passedStats.unknownValueInNonTest;
+
+      // Every provided value is exactly the destructuring default: the
+      // attribute is redundant at each callsite. Wins over default-never-used
+      // and same-literal, which describe the same evidence less actionably.
+      const defaultKey = usage.defaulted.get(prop.name);
+      const equalsDefault =
+        literalSites &&
+        defaultKey !== undefined &&
+        passedStats.literalValues.size === 1 &&
+        passedStats.literalValues.has(defaultKey);
+      if (equalsDefault && active('passed-equals-default')) {
+        push({ ...base, kind: 'passed-equals-default', literalValue: displayLiteral(defaultKey) });
+      }
+
       if (
+        !equalsDefault &&
         active('default-never-used') &&
         usage.defaulted.has(prop.name) &&
         passedStats &&
@@ -214,6 +249,53 @@ export function buildFindings({
         !passedStats.possiblyUndefinedInNonTest
       ) {
         push({ ...base, kind: 'default-never-used', nonTestRenderSites: component.renderSitesNonTest });
+      }
+
+      // Booleans are excluded: the one-sided boolean rules already cover them.
+      if (
+        !equalsDefault &&
+        active('same-literal') &&
+        !prop.isBoolean &&
+        literalSites &&
+        passedStats.literalValues.size === 1
+      ) {
+        push({ ...base, kind: 'same-literal', literalValue: displayLiteral([...passedStats.literalValues][0]) });
+      }
+
+      // Wide string/number props whose observed values are a small repeated
+      // set want a union literal type. Needs distinct >= 2 (1 is same-literal)
+      // and enough repetition that the set looks intentional.
+      if (
+        active('type-wider-than-usage') &&
+        prop.isWideStringOrNumber &&
+        !prop.isBoolean &&
+        literalSites &&
+        passedStats.literalValues.size >= 2 &&
+        passedStats.literalValues.size <= 4 &&
+        passedStats.nonTestSites.size >= Math.max(minSites, 2 * passedStats.literalValues.size)
+      ) {
+        push({
+          ...base,
+          kind: 'type-wider-than-usage',
+          observedValues: [...passedStats.literalValues].map(displayLiteral).sort(),
+        });
+      }
+
+      if (
+        active('union-variant-never') &&
+        prop.unionVariants.length > 1 &&
+        literalSites
+      ) {
+        const seen = prop.unionVariants.filter((v) => passedStats.literalValues.has(v.key));
+        const missing = prop.unionVariants.filter((v) => !passedStats.literalValues.has(v.key));
+        if (missing.length > 0) {
+          push({
+            ...base,
+            kind: 'union-variant-never',
+            seenVariants: seen.map((v) => v.label),
+            missingVariants: missing.map((v) => v.label),
+          });
+        }
       }
 
       // The remaining rules only make sense for optional props.
@@ -246,21 +328,6 @@ export function buildFindings({
         });
       }
 
-      // Booleans are excluded: the one-sided boolean rules already cover them.
-      if (
-        active('same-literal') &&
-        !prop.isBoolean &&
-        passedStats.nonTestSites.size >= minSites &&
-        !passedStats.unknownValueInNonTest &&
-        passedStats.literalValues.size === 1
-      ) {
-        const key = [...passedStats.literalValues][0];
-        const literalValue = key.startsWith('string:')
-          ? JSON.stringify(key.slice('string:'.length))
-          : key.slice(key.indexOf(':') + 1);
-        push({ ...base, kind: 'same-literal', literalValue });
-      }
-
       if (
         prop.isBoolean &&
         passedStats.nonTestSites.size >= minSites &&
@@ -271,24 +338,6 @@ export function buildFindings({
         }
         if (active('boolean-never-true') && passedStats.falseCount > 0 && passedStats.trueCount === 0) {
           push({ ...base, kind: 'boolean-never-true' });
-        }
-      }
-
-      if (
-        active('union-variant-never') &&
-        prop.unionVariants.length > 1 &&
-        passedStats.nonTestSites.size >= minSites &&
-        !passedStats.unknownValueInNonTest
-      ) {
-        const seen = prop.unionVariants.filter((v) => passedStats.literalValues.has(v.key));
-        const missing = prop.unionVariants.filter((v) => !passedStats.literalValues.has(v.key));
-        if (missing.length > 0) {
-          push({
-            ...base,
-            kind: 'union-variant-never',
-            seenVariants: seen.map((v) => v.label),
-            missingVariants: missing.map((v) => v.label),
-          });
         }
       }
     }

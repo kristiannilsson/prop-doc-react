@@ -11,6 +11,7 @@ import {
   Kids,
   OpaqueBody,
   OpaqueTarget,
+  PassedDefault,
   RestForward,
   SameLiteral,
   SpreadTarget,
@@ -19,6 +20,7 @@ import {
   Unconsumed,
   UnionCollide,
   UnionMode,
+  WideChoice,
   Wrapped,
 } from './components';
 
@@ -74,6 +76,13 @@ export function App() {
       <SameLiteral tone="quiet" varied="a" />
       <SameLiteral tone="quiet" varied="b" />
       <SameLiteral tone="quiet" varied="c" />
+      <PassedDefault size={7} />
+      <PassedDefault size={7} />
+      <PassedDefault size={7} />
+      <WideChoice kind="a" group="g" />
+      <WideChoice kind="a" group="g" />
+      <WideChoice kind="b" group="g" />
+      <WideChoice kind="b" group="g" />
     </div>
   );
 }

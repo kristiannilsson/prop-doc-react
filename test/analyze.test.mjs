@@ -106,10 +106,12 @@ const STATISTICAL_KINDS = [
   'union-variant-never',
   'default-never-used',
   'same-literal',
+  'passed-equals-default',
+  'type-wider-than-usage',
 ];
 
 test('minSites above the fixture site count suppresses statistical rules only', () => {
-  const strict = analyzeProject(fixtureTsconfig, { minSites: 4 });
+  const strict = analyzeProject(fixtureTsconfig, { minSites: 5 });
   assert.ok(strict.findings.length > 0);
   assert.ok(strict.findings.every((f) => !STATISTICAL_KINDS.includes(f.kind)));
 });
@@ -119,7 +121,7 @@ test('excludes components defined in test files by default', () => {
 });
 
 test('counts all components with a props parameter, including test-file ones', () => {
-  assert.equal(result.componentsAnalyzed, 23);
+  assert.equal(result.componentsAnalyzed, 25);
 });
 
 test('flags props always passed the same literal, quoting strings, sparing varied props', () => {
@@ -128,6 +130,35 @@ test('flags props always passed the same literal, quoting strings, sparing varie
   assert.equal(sameLiteral[0].prop, 'tone');
   assert.equal(sameLiteral[0].literalValue, '"quiet"');
   assert.equal(sameLiteral[0].severity, 'advisory');
+});
+
+test('flags callsites that always pass exactly the destructuring default', () => {
+  const kinds = findingsFor('PassedDefault').map((f) => f.kind);
+  assert.ok(kinds.includes('passed-equals-default'));
+  const finding = findingsFor('PassedDefault').find((f) => f.kind === 'passed-equals-default');
+  assert.equal(finding.literalValue, '7');
+  // The more specific rule wins over the overlapping generic ones.
+  assert.ok(!kinds.includes('default-never-used'));
+  assert.ok(!kinds.includes('same-literal'));
+});
+
+test('flags wide string props whose observed values are a small repeated set', () => {
+  const finding = findingsFor('WideChoice').find((f) => f.kind === 'type-wider-than-usage');
+  assert.ok(finding);
+  assert.equal(finding.prop, 'kind');
+  assert.deepEqual(finding.observedValues, ['"a"', '"b"']);
+});
+
+test('same-literal fires for required props too', () => {
+  const finding = findingsFor('WideChoice').find((f) => f.kind === 'same-literal');
+  assert.ok(finding);
+  assert.equal(finding.prop, 'group');
+  assert.equal(finding.literalValue, '"g"');
+});
+
+test('type-wider-than-usage does not fire on union-typed or varied props', () => {
+  assert.ok(!findingsFor('UnionMode').some((f) => f.kind === 'type-wider-than-usage'));
+  assert.ok(!findingsFor('SameLiteral').some((f) => f.kind === 'type-wider-than-usage'));
 });
 
 test('same-literal leaves booleans to the one-sided boolean rules', () => {

@@ -21,19 +21,16 @@ Implemented and shipping:
   - Prop accepted (required props included) but never read and never forwarded (`unconsumed`).
   - Callback prop passed by parents but never referenced by the component (`callback-never-invoked`).
   - Destructuring default never exercised — every non-test callsite passes a value whose type excludes `undefined` (`default-never-used`).
-- Prop always passed the same literal value when provided (`same-literal`).
+- Prop always passed the same literal value when provided (`same-literal`) — required props included.
+- Union literal variants never used (`union-variant-never`) — required props included.
+- Callsites that always pass exactly the destructuring default (`passed-equals-default`); wins over `default-never-used` / `same-literal` on the same evidence.
+- Wide `string`/`number` props whose observed values are a small repeated literal set (`type-wider-than-usage`) — suggest a union type.
 - Whole-program view: multiple tsconfig paths merge into one program, and TypeScript project references are followed automatically, so monorepo cross-package render sites are visible. (Note: cross-package imports must resolve to sources — relative paths or `paths` aliases; imports resolving to a package's built `.d.ts` are not connected back to the source component.)
 - Public-API awareness: components exported from a non-`private` package's entry point (package.json `exports`/`main` or `index.ts` / `src/index.ts` barrels) are marked `publicApi` and never gate CI — external consumers are invisible to the program. `--assume-internal` disables the demotion.
 
 ## Next: See the whole program
 
 - Resolve package-name imports (`@scope/ui`) that land on built `.d.ts` files back to the referenced project's sources, so monorepos that don't use source aliases also connect.
-
-## Next: Quick wins (ride on data already collected)
-
-- `type-wider-than-usage`: prop declared `string`/`number` whose observed values are a small literal set — suggest a union literal type. The inverse of `union-variant-never`, built from the same literal tracking.
-- `passed-equals-default`: callsite passes exactly the component's destructuring default (`size={36}` where the body says `size = 36`) — pure callsite noise. Needs the default's literal value captured in body analysis.
-- Extend `same-literal` and `union-variant-never` to required props (both currently fire for optional props only). A required prop every caller passes as the same value is the strongest "demote to optional-with-default" signal there is.
 
 ## Later: More consumption-based rules
 

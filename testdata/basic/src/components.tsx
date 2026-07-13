@@ -162,6 +162,21 @@ export function SameLiteral(props: SameLiteralProps) {
   return <div>{props.tone}{props.varied}</div>;
 }
 
+interface PassedDefaultProps {
+  size?: number; // every site passes exactly the default -> 'passed-equals-default'
+}
+export function PassedDefault({ size = 7 }: PassedDefaultProps) {
+  return <div>{size}</div>;
+}
+
+interface WideChoiceProps {
+  kind?: string; // declared string but only ever 'a' | 'b' -> 'type-wider-than-usage'
+  group: string; // required, but every caller passes "g" -> 'same-literal'
+}
+export function WideChoice(props: WideChoiceProps) {
+  return <div>{props.kind}{props.group}</div>;
+}
+
 interface OpaqueBodyProps {
   mystery?: string; // props object escapes -> consumption rules stay silent
 }

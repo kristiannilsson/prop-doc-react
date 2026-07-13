@@ -1,8 +1,26 @@
 import type ts from 'typescript';
 import type { BodyUsage, ComponentRecord, TsApi } from './types.mjs';
+import { literalKey } from './constants.mjs';
 
 function opaqueUsage(): BodyUsage {
-  return { opaque: true, consumed: new Set(), defaulted: new Set(), restRemainders: [] };
+  return { opaque: true, consumed: new Set(), defaulted: new Map(), restRemainders: [] };
+}
+
+/** Type-tagged literal key of a default expression, or undefined when it isn't a literal. */
+function literalKeyOfExpression(expr: ts.Expression, tsApi: TsApi): string | undefined {
+  if (expr.kind === tsApi.SyntaxKind.TrueKeyword) return literalKey(true);
+  if (expr.kind === tsApi.SyntaxKind.FalseKeyword) return literalKey(false);
+  if (tsApi.isStringLiteral(expr) || tsApi.isNoSubstitutionTemplateLiteral(expr)) return literalKey(expr.text);
+  if (tsApi.isNumericLiteral(expr)) return literalKey(Number(expr.text));
+  if (
+    tsApi.isPrefixUnaryExpression(expr) &&
+    (expr.operator === tsApi.SyntaxKind.MinusToken || expr.operator === tsApi.SyntaxKind.PlusToken) &&
+    tsApi.isNumericLiteral(expr.operand)
+  ) {
+    const n = Number(expr.operand.text);
+    return literalKey(expr.operator === tsApi.SyntaxKind.MinusToken ? -n : n);
+  }
+  return undefined;
 }
 
 export function isConsumed(usage: BodyUsage, propName: string): boolean {
@@ -84,7 +102,7 @@ export function analyzeBodyUsage(
   const param = fnNode.parameters[0];
   if (!param || !fnNode.body) return opaqueUsage();
 
-  const usage: BodyUsage = { opaque: false, consumed: new Set(), defaulted: new Set(), restRemainders: [] };
+  const usage: BodyUsage = { opaque: false, consumed: new Set(), defaulted: new Map(), restRemainders: [] };
   const identifiers = collectValueIdentifiers(fnNode, tsApi);
 
   function processPattern(pattern: ts.ObjectBindingPattern): void {
@@ -106,7 +124,9 @@ export function analyzeBodyUsage(
         continue;
       }
       named.add(propName);
-      if (element.initializer) usage.defaulted.add(propName);
+      if (element.initializer) {
+        usage.defaulted.set(propName, literalKeyOfExpression(element.initializer, tsApi));
+      }
       if (tsApi.isIdentifier(element.name)) {
         if (isBindingReferenced(element.name, identifiers, checker, tsApi)) usage.consumed.add(propName);
       } else {

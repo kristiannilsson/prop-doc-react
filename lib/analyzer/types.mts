@@ -12,7 +12,9 @@ export type FindingKind =
   | 'unconsumed'
   | 'callback-never-invoked'
   | 'default-never-used'
-  | 'same-literal';
+  | 'same-literal'
+  | 'passed-equals-default'
+  | 'type-wider-than-usage';
 
 // 'definite' findings point at dead code; 'advisory' findings are API-design
 // suggestions inferred from usage statistics. Only high-confidence definite
@@ -44,6 +46,8 @@ export interface OwnPropMeta {
   isBoolean: boolean;
   /** The prop's (non-nullable) type is callable. */
   isCallable: boolean;
+  /** The prop's (non-nullable) type is the wide `string` / `number` primitive, not a literal union. */
+  isWideStringOrNumber: boolean;
   unionVariants: UnionVariant[];
   /** Rules suppressed via `prop-doc-ignore` comments on the prop declaration. */
   suppressed: 'all' | Set<FindingKind> | undefined;
@@ -55,8 +59,12 @@ export interface BodyUsage {
   opaque: boolean;
   /** Props read via a referenced destructured binding or a `props.x` access. */
   consumed: Set<string>;
-  /** Props with a destructuring default value. */
-  defaulted: Set<string>;
+  /**
+   * Props with a destructuring default value, mapped to the default's
+   * type-tagged literal key (see `literalKey`), or undefined when the
+   * default isn't a literal.
+   */
+  defaulted: Map<string, string | undefined>;
   /**
    * For each referenced `...rest` binding, the prop names its pattern picks off;
    * every prop NOT in the set is consumed (forwarded) through that rest.
@@ -94,8 +102,10 @@ export interface Finding extends FindingBase {
   nonTestRenderSites?: number;
   missingVariants?: string[];
   seenVariants?: string[];
-  /** For 'same-literal': the one value every parent passes, rendered for display (strings quoted). */
+  /** For 'same-literal' / 'passed-equals-default': the one value every parent passes, rendered for display (strings quoted). */
   literalValue?: string;
+  /** For 'type-wider-than-usage': every value ever passed, rendered for display. */
+  observedValues?: string[];
 }
 
 export interface SkippedComponent {

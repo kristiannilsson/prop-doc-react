@@ -9,7 +9,9 @@ Find React component prop-API drift that accumulates silently across a codebase:
 - props (required ones too) the component body never reads or forwards,
 - callback props parents pass that the component never references,
 - destructuring defaults that no production callsite can ever trigger,
-- props always passed the same literal value (fold it into a default).
+- props always passed the same literal value (fold it into a default),
+- callsites that always pass exactly the destructuring default (delete the attribute),
+- wide `string`/`number` props only ever passed a small literal set (narrow to a union type).
 
 The component handles the prop correctly, the types check, the branch is tested by nothing and reachable by nothing. Greps can't find these because the evidence is an *absence* spread across every other file. This tool runs a whole-program analysis with the TypeScript type checker and reports them.
 

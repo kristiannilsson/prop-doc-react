@@ -67,6 +67,8 @@ function kindTag(kind: Finding['kind']): string {
   if (kind === 'default-never-used') return color(33, '[default-never-used]');
   if (kind === 'always') return color(33, '[always]');
   if (kind === 'same-literal') return color(33, '[same-literal]');
+  if (kind === 'passed-equals-default') return color(33, '[passed-equals-default]');
+  if (kind === 'type-wider-than-usage') return color(34, '[type-wider-than-usage]');
   if (kind === 'boolean-never-true') return color(34, '[bool-never-true]');
   if (kind === 'boolean-never-false') return color(34, '[bool-never-false]');
   if (kind === 'union-variant-never') return color(34, '[union-variant-never]');
@@ -86,6 +88,12 @@ function findingStatus(f: Finding): string {
   }
   if (f.kind === 'same-literal') {
     return `always passed the same value when provided: ${f.literalValue}`;
+  }
+  if (f.kind === 'passed-equals-default') {
+    return `every provided value equals the destructuring default (${f.literalValue}); the attribute is redundant`;
+  }
+  if (f.kind === 'type-wider-than-usage') {
+    return `type is wider than usage; only ever passed: ${f.observedValues?.join(', ') ?? ''} — consider a union type`;
   }
   if (f.kind === 'boolean-never-true') return 'boolean is only ever passed false when provided';
   if (f.kind === 'boolean-never-false') return 'boolean is only ever passed true when provided';
