@@ -185,6 +185,15 @@ test('spares destructuring defaults when a site may pass undefined', () => {
   assert.ok(!kinds.includes('default-never-used'));
 });
 
+test('always does not fire when a site passes a possibly-undefined value', () => {
+  // DefaultMaybe's `size` is passed at every site, but one value is typed
+  // `number | undefined` — the prop is only conditionally provided.
+  const kinds = findingsFor('DefaultMaybe').map((f) => f.kind);
+  assert.ok(!kinds.includes('always'));
+  // Control: DefaultDead passes only defined values and still fires.
+  assert.ok(findingsFor('DefaultDead').some((f) => f.kind === 'always'));
+});
+
 test('a bare prop-doc-ignore comment suppresses every rule for that prop', () => {
   assert.ok(findingsFor('Suppressed').every((f) => f.prop !== 'quiet'));
 });

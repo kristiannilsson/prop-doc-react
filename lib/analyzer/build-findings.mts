@@ -229,10 +229,14 @@ export function buildFindings({
 
       // The remaining rules are statistical: their evidence is a usage pattern
       // across sites, so they only fire once enough sites back the pattern.
+      // "Always passed" also requires every value's type to exclude undefined:
+      // a site passing `x={maybe}` with `maybe: string | undefined` provides
+      // the prop only conditionally, so it is no candidate for required.
       if (
         active('always') &&
         component.renderSitesNonTest >= minSites &&
-        passedStats.nonTestSites.size === component.renderSitesNonTest
+        passedStats.nonTestSites.size === component.renderSitesNonTest &&
+        !passedStats.possiblyUndefinedInNonTest
       ) {
         push({
           ...base,

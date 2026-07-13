@@ -8,7 +8,7 @@ Implemented and shipping:
 
 - Optional prop never passed by any parent.
 - Optional prop passed only from test/story files.
-- Optional prop always passed by non-test parents.
+- Optional prop always passed by non-test parents (only counting values whose types exclude `undefined`).
 - Optional boolean one-sided usage (true-only or false-only when provided).
 - Optional union literal variants never used.
 - Confidence modeling for opaque spreads and indirect component references.
