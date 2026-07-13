@@ -32,6 +32,8 @@ Options:
                              code (default path: ${DEFAULT_BASELINE_PATH})
   --write-baseline           record the current findings to the baseline file
                              and exit 0
+  --assume-internal          skip public-API detection: treat every component
+                             as having no consumers outside this program
   --help                     show this help
 
 Suppress a finding at the source with a comment on the prop declaration:
@@ -111,6 +113,7 @@ let rules: FindingKind[] | undefined;
 let minSites: number | undefined;
 let baselinePath: string | undefined;
 let writeBaselineMode = false;
+let assumeInternal = false;
 const positional: string[] = [];
 
 for (let i = 0; i < args.length; i++) {
@@ -143,6 +146,7 @@ for (let i = 0; i < args.length; i++) {
     minSites = n;
   } else if (flag === '--baseline') baselinePath = takeValue();
   else if (flag === '--write-baseline') writeBaselineMode = true;
+  else if (flag === '--assume-internal') assumeInternal = true;
   else usageError(`Unknown option: ${arg}`);
 }
 
@@ -150,7 +154,7 @@ const tsconfigPaths = positional.length > 0 ? positional : ['tsconfig.json'];
 
 let result: AnalyzeResult;
 try {
-  result = analyzeProject(tsconfigPaths, { includeTestComponents, rules, minSites });
+  result = analyzeProject(tsconfigPaths, { includeTestComponents, rules, minSites, assumeInternal });
 } catch (error) {
   const message = error instanceof Error ? error.message : String(error);
   console.error(message);
@@ -176,10 +180,10 @@ try {
 }
 
 // Only NEW dead-code findings the analysis is sure about fail the CI gate;
-// advisory rules, low-confidence findings, and baselined findings never
-// affect the exit code.
+// advisory rules, low-confidence findings, public-API components (external
+// consumers are invisible), and baselined findings never affect the exit code.
 const gates = (f: Finding): boolean =>
-  f.severity === 'definite' && !f.lowConfidence && !isBaselined(f);
+  f.severity === 'definite' && !f.lowConfidence && !f.publicApi && !isBaselined(f);
 
 function printFindingSection(title: string, sectionFindings: Finding[]): void {
   if (sectionFindings.length === 0) return;
@@ -197,8 +201,10 @@ function printFindingSection(title: string, sectionFindings: Finding[]): void {
     }
     if (finding.component !== currentComponent) {
       currentComponent = finding.component;
-      const confidence = finding.lowConfidence ? ' [low confidence: also referenced as a value]' : '';
-      console.log(`  <${finding.component}> — ${finding.renderSites} render site(s)${confidence}`);
+      const markers =
+        (finding.lowConfidence ? ' [low confidence: also referenced as a value]' : '') +
+        (finding.publicApi ? ' [public API: may have consumers outside this program]' : '');
+      console.log(`  <${finding.component}> — ${finding.renderSites} render site(s)${markers}`);
     }
     const tag = kindTag(finding.kind);
     console.log(`    ${finding.prop.padEnd(28)} ${tag} ${findingStatus(finding)}`);

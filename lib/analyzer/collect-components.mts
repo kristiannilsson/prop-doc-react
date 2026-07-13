@@ -45,6 +45,7 @@ function createComponentRecord(
     passed: new Map(),
     opaqueSpreadFiles: new Set(),
     indirectRefFiles: new Set(),
+    publicApi: false,
   };
 }
 

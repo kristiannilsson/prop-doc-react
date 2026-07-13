@@ -73,6 +73,8 @@ export interface ComponentRecord {
   passed: Map<string, PassStats>;
   opaqueSpreadFiles: Set<string>;
   indirectRefFiles: Set<string>;
+  /** Exported from a package entry point: may have consumers outside this program. */
+  publicApi: boolean;
 }
 
 export interface FindingBase {
@@ -81,6 +83,8 @@ export interface FindingBase {
   prop: string;
   renderSites: number;
   lowConfidence: boolean;
+  /** The component is exported from a package entry point; the finding must not gate CI. */
+  publicApi: boolean;
 }
 
 export interface Finding extends FindingBase {

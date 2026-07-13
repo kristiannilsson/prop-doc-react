@@ -65,6 +65,7 @@ src/containers/common/CustomerSelector.tsx
 | `--min-sites <n>`           | Non-test sites required before statistical rules fire (default: 3)  |
 | `--baseline <path>`         | Ignore findings recorded in the baseline; only new findings gate CI |
 | `--write-baseline`          | Record the current findings to the baseline file and exit 0         |
+| `--assume-internal`         | Treat every component as internal (skip public-API demotion)        |
 
 ### Adopting on an existing codebase
 
@@ -111,6 +112,7 @@ const { findings, skipped, componentsAnalyzed } = analyzeProject('tsconfig.json'
 - A spread typed `any` / `unknown` or with an index signature could pass anything, so the component is **skipped** rather than guessed at (listed under `--verbose`).
 - A component that also escapes as a plain value (`component={Foo}`, HOCs, `createElement`) may receive props through paths the analysis can't see; its findings are marked **low confidence** and don't affect the exit code.
 - Props passed *only* from test/story files are reported as a separate `tests-only` category, and components *defined* in test files are excluded by default.
+- Components exported from a non-`private` package's entry point may have consumers outside the program; their findings are marked **public API** and never gate the exit code (disable with `--assume-internal`).
 
 ## Known blind spots
 

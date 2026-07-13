@@ -23,10 +23,10 @@ Implemented and shipping:
   - Destructuring default never exercised — every non-test callsite passes a value whose type excludes `undefined` (`default-never-used`).
 - Prop always passed the same literal value when provided (`same-literal`).
 - Whole-program view: multiple tsconfig paths merge into one program, and TypeScript project references are followed automatically, so monorepo cross-package render sites are visible. (Note: cross-package imports must resolve to sources — relative paths or `paths` aliases; imports resolving to a package's built `.d.ts` are not connected back to the source component.)
+- Public-API awareness: components exported from a non-`private` package's entry point (package.json `exports`/`main` or `index.ts` / `src/index.ts` barrels) are marked `publicApi` and never gate CI — external consumers are invisible to the program. `--assume-internal` disables the demotion.
 
 ## Next: See the whole program
 
-- Public-API awareness: components exported from the package entry point may have consumers outside the program. Demote their findings to low confidence automatically, or gate on an `--internal-only` style flag, so design-system packages aren't all false positives.
 - Resolve package-name imports (`@scope/ui`) that land on built `.d.ts` files back to the referenced project's sources, so monorepos that don't use source aliases also connect.
 
 ## Next: Quick wins (ride on data already collected)

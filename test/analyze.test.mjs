@@ -266,6 +266,27 @@ test('project references are followed automatically', () => {
   assert.ok(app.findings.some((f) => f.component === 'Unreferenced' && f.prop === 'lonely' && f.kind === 'never'));
 });
 
+const publicApiTsconfig = path.join(pkgRoot, 'testdata', 'publicapi', 'tsconfig.json');
+
+test('components exported from a package entry point are marked publicApi', () => {
+  const lib = analyzeProject(publicApiTsconfig);
+  const exported = lib.findings.find((f) => f.component === 'Exported' && f.prop === 'title');
+  const internal = lib.findings.find((f) => f.component === 'Internal' && f.prop === 'hidden');
+  assert.ok(exported && internal, 'both never-findings should exist');
+  assert.equal(exported.publicApi, true);
+  assert.equal(internal.publicApi, false);
+});
+
+test('assumeInternal disables public-API demotion', () => {
+  const lib = analyzeProject(publicApiTsconfig, { assumeInternal: true });
+  assert.ok(lib.findings.every((f) => f.publicApi === false));
+});
+
+test('a project without a package.json next to its tsconfig is all internal', () => {
+  // The basic fixture has no package.json in testdata/basic.
+  assert.ok(result.findings.every((f) => f.publicApi === false));
+});
+
 test('throws a useful error for a missing tsconfig', () => {
   assert.throws(
     () => analyzeProject(path.join(pkgRoot, 'testdata', 'nope', 'tsconfig.json')),

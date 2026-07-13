@@ -192,6 +192,7 @@ export function buildFindings({
         prop: prop.name,
         renderSites: component.renderSites,
         lowConfidence,
+        publicApi: component.publicApi,
       };
 
       // Consumption rules look at the component body, so they apply to

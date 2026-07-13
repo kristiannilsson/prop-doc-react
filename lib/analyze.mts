@@ -2,6 +2,7 @@ import path from 'node:path';
 import ts from 'typescript';
 import { collectComponents } from './analyzer/collect-components.mjs';
 import { collectUsages } from './analyzer/collect-usages.mjs';
+import { markPublicComponents } from './analyzer/public-api.mjs';
 import { ALL_FINDING_KINDS, DEFAULT_MIN_SITES, FINDING_SEVERITY, buildFindings } from './analyzer/build-findings.mjs';
 import { TEST_FILE_RE } from './analyzer/constants.mjs';
 import type { AnalyzeResult, FindingKind } from './analyzer/types.mjs';
@@ -21,6 +22,8 @@ export interface AnalyzeOptions {
   rules?: FindingKind[];
   /** Minimum non-test site count before statistical rules (always, boolean one-sided, union variants) fire. */
   minSites?: number;
+  /** Skip public-API detection: treat every component as having no consumers outside this program. */
+  assumeInternal?: boolean;
 }
 
 function parseConfig(configPath: string): ts.ParsedCommandLine {
@@ -45,7 +48,7 @@ const normPath = (p: string): string => p.replaceAll('\\', '/').toLowerCase();
 
 export function analyzeProject(
   tsconfigPath: string | string[],
-  { includeTestComponents = false, rules, minSites }: AnalyzeOptions = {},
+  { includeTestComponents = false, rules, minSites, assumeInternal = false }: AnalyzeOptions = {},
 ): AnalyzeResult {
   if (typeof ts.createProgram !== 'function') {
     throw new Error(
@@ -100,6 +103,10 @@ export function analyzeProject(
     isProjectFile,
     ts,
   });
+
+  if (!assumeInternal) {
+    markPublicComponents({ configDirs, program, checker, componentsByDecl, ts });
+  }
 
   collectUsages({
     program,

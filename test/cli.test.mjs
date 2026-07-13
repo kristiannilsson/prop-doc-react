@@ -124,6 +124,22 @@ test('a missing or malformed baseline file exits 2', () => {
   }
 });
 
+const publicApiTsconfig = path.join(pkgRoot, 'testdata', 'publicapi', 'tsconfig.json');
+
+test('public-API findings do not gate the exit code; --assume-internal restores the gate', () => {
+  const demoted = run(publicApiTsconfig, '--rules', 'never', '--json');
+  const report = JSON.parse(demoted.stdout);
+  const exported = report.findings.find((f) => f.component === 'Exported');
+  assert.equal(exported.publicApi, true);
+  // Internal's finding still gates, so exit stays 1; check the marker instead.
+  const human = run(publicApiTsconfig, '--rules', 'never');
+  assert.match(human.stdout, /\[public API: may have consumers outside this program\]/);
+
+  const strict = run(publicApiTsconfig, '--rules', 'never', '--assume-internal', '--json');
+  const strictReport = JSON.parse(strict.stdout);
+  assert.ok(strictReport.findings.every((f) => f.publicApi === false));
+});
+
 test('unknown flags exit 2', () => {
   const { status, stderr } = run(fixtureTsconfig, '--nope');
   assert.equal(status, 2);
