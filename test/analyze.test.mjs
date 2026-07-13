@@ -105,6 +105,7 @@ const STATISTICAL_KINDS = [
   'boolean-never-false',
   'union-variant-never',
   'default-never-used',
+  'same-literal',
 ];
 
 test('minSites above the fixture site count suppresses statistical rules only', () => {
@@ -118,7 +119,21 @@ test('excludes components defined in test files by default', () => {
 });
 
 test('counts all components with a props parameter, including test-file ones', () => {
-  assert.equal(result.componentsAnalyzed, 22);
+  assert.equal(result.componentsAnalyzed, 23);
+});
+
+test('flags props always passed the same literal, quoting strings, sparing varied props', () => {
+  const sameLiteral = findingsFor('SameLiteral').filter((f) => f.kind === 'same-literal');
+  assert.equal(sameLiteral.length, 1);
+  assert.equal(sameLiteral[0].prop, 'tone');
+  assert.equal(sameLiteral[0].literalValue, '"quiet"');
+  assert.equal(sameLiteral[0].severity, 'advisory');
+});
+
+test('same-literal leaves booleans to the one-sided boolean rules', () => {
+  const kinds = findingsFor('BoolOneSided').map((f) => f.kind);
+  assert.ok(!kinds.includes('same-literal'));
+  assert.ok(kinds.includes('boolean-never-false'));
 });
 
 test('boolean true does not count as the string variant "true"', () => {

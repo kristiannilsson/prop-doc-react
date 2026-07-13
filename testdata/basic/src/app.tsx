@@ -12,6 +12,7 @@ import {
   OpaqueBody,
   OpaqueTarget,
   RestForward,
+  SameLiteral,
   SpreadTarget,
   Suppressed,
   TestsOnly,
@@ -70,6 +71,9 @@ export function App() {
       <DefaultMaybe size={getMaybeSize()} />
       <DefaultMaybe size={4} />
       <DefaultMaybe size={5} />
+      <SameLiteral tone="quiet" varied="a" />
+      <SameLiteral tone="quiet" varied="b" />
+      <SameLiteral tone="quiet" varied="c" />
     </div>
   );
 }

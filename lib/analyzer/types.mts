@@ -11,7 +11,8 @@ export type FindingKind =
   | 'union-variant-never'
   | 'unconsumed'
   | 'callback-never-invoked'
-  | 'default-never-used';
+  | 'default-never-used'
+  | 'same-literal';
 
 // 'definite' findings point at dead code; 'advisory' findings are API-design
 // suggestions inferred from usage statistics. Only high-confidence definite
@@ -89,6 +90,8 @@ export interface Finding extends FindingBase {
   nonTestRenderSites?: number;
   missingVariants?: string[];
   seenVariants?: string[];
+  /** For 'same-literal': the one value every parent passes, rendered for display (strings quoted). */
+  literalValue?: string;
 }
 
 export interface SkippedComponent {

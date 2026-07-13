@@ -154,6 +154,14 @@ export function UnionCollide(props: UnionCollideProps) {
   return <div>{props.flag}</div>;
 }
 
+interface SameLiteralProps {
+  tone?: string; // every parent passes "quiet" -> 'same-literal' finding
+  varied?: string; // parents pass different values -> no finding
+}
+export function SameLiteral(props: SameLiteralProps) {
+  return <div>{props.tone}{props.varied}</div>;
+}
+
 interface OpaqueBodyProps {
   mystery?: string; // props object escapes -> consumption rules stay silent
 }

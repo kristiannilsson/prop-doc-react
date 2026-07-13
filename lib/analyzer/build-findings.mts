@@ -22,6 +22,7 @@ export const FINDING_SEVERITY: Record<FindingKind, FindingSeverity> = {
   'boolean-never-false': 'advisory',
   'union-variant-never': 'advisory',
   'default-never-used': 'advisory',
+  'same-literal': 'advisory',
 };
 
 export const ALL_FINDING_KINDS = Object.keys(FINDING_SEVERITY) as FindingKind[];
@@ -238,6 +239,21 @@ export function buildFindings({
           kind: 'always',
           nonTestRenderSites: component.renderSitesNonTest,
         });
+      }
+
+      // Booleans are excluded: the one-sided boolean rules already cover them.
+      if (
+        active('same-literal') &&
+        !prop.isBoolean &&
+        passedStats.nonTestSites.size >= minSites &&
+        !passedStats.unknownValueInNonTest &&
+        passedStats.literalValues.size === 1
+      ) {
+        const key = [...passedStats.literalValues][0];
+        const literalValue = key.startsWith('string:')
+          ? JSON.stringify(key.slice('string:'.length))
+          : key.slice(key.indexOf(':') + 1);
+        push({ ...base, kind: 'same-literal', literalValue });
       }
 
       if (

@@ -61,6 +61,7 @@ function kindTag(kind: Finding['kind']): string {
   if (kind === 'callback-never-invoked') return color(31, '[callback-never-invoked]');
   if (kind === 'default-never-used') return color(33, '[default-never-used]');
   if (kind === 'always') return color(33, '[always]');
+  if (kind === 'same-literal') return color(33, '[same-literal]');
   if (kind === 'boolean-never-true') return color(34, '[bool-never-true]');
   if (kind === 'boolean-never-false') return color(34, '[bool-never-false]');
   if (kind === 'union-variant-never') return color(34, '[union-variant-never]');
@@ -77,6 +78,9 @@ function findingStatus(f: Finding): string {
   }
   if (f.kind === 'always') {
     return `passed by every non-test parent (${f.nonTestRenderSites} non-test render site(s))`;
+  }
+  if (f.kind === 'same-literal') {
+    return `always passed the same value when provided: ${f.literalValue}`;
   }
   if (f.kind === 'boolean-never-true') return 'boolean is only ever passed false when provided';
   if (f.kind === 'boolean-never-false') return 'boolean is only ever passed true when provided';

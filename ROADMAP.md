@@ -21,15 +21,12 @@ Implemented and shipping:
   - Prop accepted (required props included) but never read and never forwarded (`unconsumed`).
   - Callback prop passed by parents but never referenced by the component (`callback-never-invoked`).
   - Destructuring default never exercised — every non-test callsite passes a value whose type excludes `undefined` (`default-never-used`).
+- Prop always passed the same literal value when provided (`same-literal`).
 
 ## Next: See the whole program
 
 - Follow TypeScript project references (or accept multiple tsconfig paths) so monorepo cross-package render sites are visible. Without this, the tool over-reports on exactly the codebases big enough to have prop drift.
 - Public-API awareness: components exported from the package entry point may have consumers outside the program. Demote their findings to low confidence automatically, or gate on an `--internal-only` style flag, so design-system packages aren't all false positives.
-
-## Quick wins
-
-- Prop always passed as the same literal value (nearly free: literal values are already collected).
 
 ## Later (Advanced Relational Checks)
 
