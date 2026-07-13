@@ -9,6 +9,10 @@ Find React component prop-API drift that accumulates silently across a codebase:
 
 The component handles the prop correctly, the types check, the branch is tested by nothing and reachable by nothing. Greps can't find these because the evidence is an *absence* spread across every other file. This tool runs a whole-program analysis with the TypeScript type checker and reports them.
 
+## Roadmap
+
+See [ROADMAP.md](ROADMAP.md) for planned rules and priorities.
+
 ## Usage
 
 ```sh
