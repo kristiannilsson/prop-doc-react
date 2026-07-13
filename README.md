@@ -1,4 +1,4 @@
-# @prop-doc/react
+# @kristiannilsson/prop-doc-react
 
 Find React component prop-API drift that accumulates silently across a codebase:
 
@@ -12,7 +12,7 @@ The component handles the prop correctly, the types check, the branch is tested 
 ## Usage
 
 ```sh
-npx @prop-doc/react [path/to/tsconfig.json]
+npx @kristiannilsson/prop-doc-react [path/to/tsconfig.json]
 ```
 
 Defaults to `./tsconfig.json`.
@@ -45,7 +45,7 @@ src/components/booking-form/FormSection.tsx
 ### As a library
 
 ```js
-import { analyzeProject } from '@prop-doc/react';
+import { analyzeProject } from '@kristiannilsson/prop-doc-react';
 
 const { findings, skipped, componentsAnalyzed } = analyzeProject('tsconfig.json', {
   includeTestComponents: false,

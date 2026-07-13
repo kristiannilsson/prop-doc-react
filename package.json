@@ -1,5 +1,5 @@
 {
-  "name": "@prop-doc/react",
+  "name": "@kristiannilsson/prop-doc-react",
   "version": "0.1.0",
   "description": "Analyze React prop contracts to find dead, over-optional, and unused variants.",
   "type": "module",
