@@ -13,14 +13,37 @@ Implemented and shipping:
 - Optional union literal variants never used.
 - Confidence modeling for opaque spreads and indirect component references.
 
-## Next (High ROI)
+## Next: Make the CI gate usable
 
-Prioritize these for strongest practical value:
+The exit code currently treats every definite finding the same, but `never` (dead code) and `always` / one-sided booleans / dead union variants (API-design advice) differ in actionability. Fix this before promoting CI adoption:
 
-- Prop always passed as the same literal value (required, or optional when present).
-- Default/fallback branch never exercised by production callsites.
-- Callback prop passed by parents but never invoked by the component.
+- Severity tiers per rule family (definite vs advisory), reflected in the exit code.
+- Rule-level flags to enable/disable checks independently.
+- Minimum render-site threshold for statistical rules (`always`, boolean one-sided, union variants) so "always passed" can't mean "passed once". Configurable, sensible default.
+
+## Next: Make adoption on existing codebases possible
+
+Any codebase old enough to benefit will have many findings on first run. Without a ratchet, the CI gate is unusable until a full cleanup happens:
+
+- Baseline file: record current findings, fail only on *new* ones.
+- Inline suppression comments (`// prop-doc-ignore`).
+
+## Next: Consumption analysis (the marquee rules)
+
+Both require the same new capability — analyzing how the component *body* uses its props (destructuring, `props.x` access, rest-spread forwarding), conservatively:
+
 - Prop accepted by component but never consumed and never forwarded.
+- Callback prop passed by parents but never invoked by the component.
+- Default/fallback value never exercised (destructuring default + every production callsite passes the prop).
+
+## Next: See the whole program
+
+- Follow TypeScript project references (or accept multiple tsconfig paths) so monorepo cross-package render sites are visible. Without this, the tool over-reports on exactly the codebases big enough to have prop drift.
+- Public-API awareness: components exported from the package entry point may have consumers outside the program. Demote their findings to low confidence automatically, or gate on an `--internal-only` style flag, so design-system packages aren't all false positives.
+
+## Quick wins
+
+- Prop always passed as the same literal value (nearly free: literal values are already collected).
 
 ## Later (Advanced Relational Checks)
 
@@ -30,7 +53,14 @@ Prioritize these for strongest practical value:
 
 ## Product-Level Improvements
 
-- Rule-level flags to enable/disable checks independently.
-- Severity tiers per rule family (definite vs advisory).
 - Stable JSON schema versioning for CI/tool integrations.
 - Per-finding fix suggestions in CLI output.
+
+## Non-goals
+
+- ESLint plugin packaging: the analysis is inherently whole-program and fights ESLint's per-file model. The standalone CLI with stable JSON output is the integration surface.
+
+## Known fixes (not roadmap items, just tracked)
+
+- Test-file classification should test paths *relative to the tsconfig directory*, so a repo living under a `/test/` or `/fixtures/` path segment isn't misclassified wholesale.
+- Literal-value tracking should key by type so boolean `true` and string `"true"` union variants don't collide.
