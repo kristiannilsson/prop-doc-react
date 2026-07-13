@@ -32,11 +32,11 @@ src/components/booking-form/FormSection.tsx
 
 ### Options
 
-| Flag | Effect |
-| --- | --- |
-| `--json` | Machine-readable output |
-| `--verbose` | Also list components skipped due to untyped spreads |
-| `--include-test-components` | Analyze components defined in test/story files too |
+| Flag                          | Effect                                              |
+| ----------------------------- | --------------------------------------------------- |
+| `--json`                    | Machine-readable output                             |
+| `--verbose`                 | Also list components skipped due to untyped spreads |
+| `--include-test-components` | Analyze components defined in test/story files too  |
 
 ### Exit codes
 
@@ -69,10 +69,6 @@ const { findings, skipped, componentsAnalyzed } = analyzeProject('tsconfig.json'
 - `React.createElement` calls and class components aren't analyzed.
 - Render sites are matched per JSX tag; a prop threaded through render-prop plumbing to a low-confidence component may still be a false positive — hence the marker.
 - A repo living under a path containing a `/test/` or `/fixtures/` segment will have its files misclassified as test files.
-
-## Why does this depend on TypeScript 5.9?
-
-TypeScript 7+ (the native Go compiler) ships no JavaScript compiler API. 5.9 is the terminal release of that API and remains the engine underneath the entire analysis-tool ecosystem. This package pins its **own** copy purely for analysis — it never compiles your code, so the TypeScript version your project builds with is irrelevant. When the native compiler's external API (`@typescript/api`) stabilizes, the engine can be swapped without changing the CLI.
 
 ## License
 
