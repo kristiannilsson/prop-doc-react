@@ -28,11 +28,26 @@ Implemented and shipping:
 - Follow TypeScript project references (or accept multiple tsconfig paths) so monorepo cross-package render sites are visible. Without this, the tool over-reports on exactly the codebases big enough to have prop drift.
 - Public-API awareness: components exported from the package entry point may have consumers outside the program. Demote their findings to low confidence automatically, or gate on an `--internal-only` style flag, so design-system packages aren't all false positives.
 
+## Next: Quick wins (ride on data already collected)
+
+- `type-wider-than-usage`: prop declared `string`/`number` whose observed values are a small literal set — suggest a union literal type. The inverse of `union-variant-never`, built from the same literal tracking.
+- `passed-equals-default`: callsite passes exactly the component's destructuring default (`size={36}` where the body says `size = 36`) — pure callsite noise. Needs the default's literal value captured in body analysis.
+- Extend `same-literal` and `union-variant-never` to required props (both currently fire for optional props only). A required prop every caller passes as the same value is the strongest "demote to optional-with-default" signal there is.
+
+## Later: More consumption-based rules
+
+- `forward-only`: prop consumed solely by forwarding it unchanged to a child JSX element, through 2+ layers — prop-drilling detection; the fix is context or composition.
+- Value-identical prop pairs: two props every callsite passes the same value (`label` and `title`) — one is redundant. A gentler on-ramp to the relational machinery below.
+
 ## Later (Advanced Relational Checks)
+
+These need a higher site-count bar than the default `--min-sites` to be trustworthy: "A and B always co-occur" has too many innocent explanations at 3–5 render sites.
 
 - Cross-prop implication rules (A implies B, or A forces B to one value).
 - Mutually exclusive props that always co-occur in practice.
 - API collapse suggestions when multiple props encode one mode.
+
+Note on ordering: rule trustworthiness is capped by program visibility. "See the whole program" comes before all new statistical rules — adding rules while cross-package callers are invisible multiplies the false-positive surface.
 
 ## Product-Level Improvements
 
