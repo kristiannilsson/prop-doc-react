@@ -2,8 +2,8 @@
 
 import path from 'node:path';
 import process from 'node:process';
-import { analyzeProject } from '../lib/analyze.mjs';
-import type { AnalyzeResult, Finding } from '../lib/analyzer/types.mjs';
+import { ALL_FINDING_KINDS, DEFAULT_MIN_SITES, analyzeProject } from '../lib/analyze.mjs';
+import type { AnalyzeResult, Finding, FindingKind } from '../lib/analyzer/types.mjs';
 
 const HELP = `Usage: prop-doc [tsconfig path] [options]
 
@@ -16,7 +16,15 @@ Options:
   --json                     machine-readable output
   --verbose                  also list components skipped due to untyped spreads
   --include-test-components  analyze components defined in test/story files too
+  --rules <list>             comma-separated rules to run (default: all)
+                             ${ALL_FINDING_KINDS.join(', ')}
+  --min-sites <n>            non-test sites required before statistical rules
+                             (always, boolean one-sided, union variants) fire
+                             (default: ${DEFAULT_MIN_SITES})
   --help                     show this help
+
+Exit codes: 1 if any definite high-confidence finding (never, tests-only),
+0 if clean or only advisory/low-confidence findings, 2 on usage errors.
 `;
 
 const useColor = process.stdout.isTTY && !process.env.NO_COLOR;
@@ -63,22 +71,54 @@ if (args.includes('--help') || args.includes('-h')) {
   process.exit(0);
 }
 
-const KNOWN_FLAGS = new Set(['--json', '--verbose', '--include-test-components']);
-const unknown = args.filter((a) => a.startsWith('--') && !KNOWN_FLAGS.has(a));
-if (unknown.length > 0) {
-  console.error(`Unknown option(s): ${unknown.join(', ')}\n\n${HELP}`);
+function usageError(message: string): never {
+  console.error(`${message}\n\n${HELP}`);
   process.exit(2);
 }
 
-const asJson = args.includes('--json');
-const verbose = args.includes('--verbose');
-const includeTestComponents = args.includes('--include-test-components');
-const positional = args.filter((a) => !a.startsWith('--'));
+let asJson = false;
+let verbose = false;
+let includeTestComponents = false;
+let rules: FindingKind[] | undefined;
+let minSites: number | undefined;
+const positional: string[] = [];
+
+for (let i = 0; i < args.length; i++) {
+  const arg = args[i];
+  if (!arg.startsWith('--')) {
+    positional.push(arg);
+    continue;
+  }
+  const eq = arg.indexOf('=');
+  const flag = eq === -1 ? arg : arg.slice(0, eq);
+  const takeValue = (): string => {
+    if (eq !== -1) return arg.slice(eq + 1);
+    const next = args[++i];
+    if (next === undefined || next.startsWith('--')) usageError(`${flag} requires a value`);
+    return next;
+  };
+
+  if (flag === '--json') asJson = true;
+  else if (flag === '--verbose') verbose = true;
+  else if (flag === '--include-test-components') includeTestComponents = true;
+  else if (flag === '--rules') {
+    const names = takeValue().split(',').map((r) => r.trim()).filter(Boolean);
+    const bad = names.filter((r) => !(ALL_FINDING_KINDS as string[]).includes(r));
+    if (bad.length > 0) usageError(`Unknown rule(s): ${bad.join(', ')}`);
+    if (names.length === 0) usageError('--rules requires at least one rule');
+    rules = names as FindingKind[];
+  } else if (flag === '--min-sites') {
+    const n = Number(takeValue());
+    if (!Number.isInteger(n) || n < 1) usageError('--min-sites requires a positive integer');
+    minSites = n;
+  } else usageError(`Unknown option: ${arg}`);
+}
+
 const tsconfigPath = positional[0] ?? 'tsconfig.json';
 
 let result: AnalyzeResult;
 try {
-  result = analyzeProject(tsconfigPath, { includeTestComponents });
+  result = analyzeProject(tsconfigPath, { includeTestComponents, rules, minSites });
 } catch (error) {
   const message = error instanceof Error ? error.message : String(error);
   console.error(message);
@@ -86,6 +126,11 @@ try {
 }
 
 const { findings, skipped, componentsAnalyzed } = result;
+
+// Only dead-code findings the analysis is sure about fail the CI gate;
+// advisory rules and low-confidence findings never affect the exit code.
+const gates = (f: Finding): boolean => f.severity === 'definite' && !f.lowConfidence;
+
 const cwd = process.cwd();
 const rel = (fileName: string): string => path.relative(cwd, fileName).replaceAll('\\', '/');
 
@@ -134,8 +179,8 @@ if (asJson) {
     ),
   );
 } else {
-  const definiteFindings = findings.filter((f) => !f.lowConfidence);
-  const advisoryFindings = findings.filter((f) => f.lowConfidence);
+  const definiteFindings = findings.filter(gates);
+  const advisoryFindings = findings.filter((f) => !gates(f));
 
   printFindingSection('Definite Findings', definiteFindings);
   printFindingSection('Advisory Findings', advisoryFindings);
@@ -145,11 +190,10 @@ if (asJson) {
     for (const entry of skipped) console.log(`  <${entry.component}> in ${rel(entry.file)}`);
   }
 
-  const definite = findings.filter((f) => !f.lowConfidence).length;
   console.log(
     `\n${findings.length} finding(s) across ${new Set(findings.map((f) => `${f.file}:${f.component}`)).size} component(s)` +
-      ` (${definite} definite). ${componentsAnalyzed} components analyzed, ${skipped.length} skipped.`,
+      ` (${findings.filter(gates).length} definite). ${componentsAnalyzed} components analyzed, ${skipped.length} skipped.`,
   );
 }
 
-process.exit(findings.some((f) => !f.lowConfidence) ? 1 : 0);
+process.exit(findings.some(gates) ? 1 : 0);

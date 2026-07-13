@@ -2,17 +2,34 @@ import type ts from 'typescript';
 import type {
   ComponentRecord,
   Finding,
+  FindingKind,
+  FindingSeverity,
   OptionalPropMeta,
   SkippedComponent,
   TsApi,
 } from './types.mjs';
 import { TEST_FILE_RE } from './constants.mjs';
 
+export const FINDING_SEVERITY: Record<FindingKind, FindingSeverity> = {
+  never: 'definite',
+  'tests-only': 'definite',
+  always: 'advisory',
+  'boolean-never-true': 'advisory',
+  'boolean-never-false': 'advisory',
+  'union-variant-never': 'advisory',
+};
+
+export const ALL_FINDING_KINDS = Object.keys(FINDING_SEVERITY) as FindingKind[];
+
+export const DEFAULT_MIN_SITES = 3;
+
 interface BuildFindingsArgs {
   components: ComponentRecord[];
   checker: ts.TypeChecker;
   isProjectFile: (sf: ts.SourceFile) => boolean;
   includeTestComponents: boolean;
+  enabledRules?: FindingKind[];
+  minSites?: number;
   ts: TsApi;
 }
 
@@ -79,10 +96,17 @@ export function buildFindings({
   checker,
   isProjectFile,
   includeTestComponents,
+  enabledRules,
+  minSites = DEFAULT_MIN_SITES,
   ts: tsApi,
 }: BuildFindingsArgs): { findings: Finding[]; skipped: SkippedComponent[] } {
   const findings: Finding[] = [];
   const skipped: SkippedComponent[] = [];
+  const enabled = enabledRules ? new Set(enabledRules) : undefined;
+  const ruleOn = (kind: FindingKind): boolean => !enabled || enabled.has(kind);
+  const push = (finding: Omit<Finding, 'severity'>): void => {
+    findings.push({ ...finding, severity: FINDING_SEVERITY[finding.kind] });
+  };
 
   for (const component of components) {
     if (component.renderSites === 0) continue;
@@ -109,43 +133,51 @@ export function buildFindings({
       };
 
       if (!passedStats) {
-        findings.push({ ...base, kind: 'never' });
+        if (ruleOn('never')) push({ ...base, kind: 'never' });
         continue;
       }
 
-      if ([...passedStats.files].every((f) => TEST_FILE_RE.test(f))) {
-        findings.push({ ...base, kind: 'tests-only', testFiles: [...passedStats.files].sort() });
+      if (ruleOn('tests-only') && [...passedStats.files].every((f) => TEST_FILE_RE.test(f))) {
+        push({ ...base, kind: 'tests-only', testFiles: [...passedStats.files].sort() });
       }
 
+      // The remaining rules are statistical: their evidence is a usage pattern
+      // across sites, so they only fire once enough sites back the pattern.
       if (
-        component.renderSitesNonTest > 0 &&
+        ruleOn('always') &&
+        component.renderSitesNonTest >= minSites &&
         passedStats.nonTestSites.size === component.renderSitesNonTest
       ) {
-        findings.push({
+        push({
           ...base,
           kind: 'always',
           nonTestRenderSites: component.renderSitesNonTest,
         });
       }
 
-      if (prop.isBoolean && passedStats.nonTestSites.size > 0 && !passedStats.unknownValueInNonTest) {
-        if (passedStats.trueCount > 0 && passedStats.falseCount === 0) {
-          findings.push({ ...base, kind: 'boolean-never-false' });
+      if (
+        prop.isBoolean &&
+        passedStats.nonTestSites.size >= minSites &&
+        !passedStats.unknownValueInNonTest
+      ) {
+        if (ruleOn('boolean-never-false') && passedStats.trueCount > 0 && passedStats.falseCount === 0) {
+          push({ ...base, kind: 'boolean-never-false' });
         }
-        if (passedStats.falseCount > 0 && passedStats.trueCount === 0) {
-          findings.push({ ...base, kind: 'boolean-never-true' });
+        if (ruleOn('boolean-never-true') && passedStats.falseCount > 0 && passedStats.trueCount === 0) {
+          push({ ...base, kind: 'boolean-never-true' });
         }
       }
 
       if (
+        ruleOn('union-variant-never') &&
         prop.unionVariants.length > 1 &&
-        passedStats.nonTestSites.size > 0 &&
+        passedStats.nonTestSites.size >= minSites &&
         !passedStats.unknownValueInNonTest
       ) {
         const seen = prop.unionVariants.filter((v) => passedStats.literalValues.has(v));
         const missing = prop.unionVariants.filter((v) => !passedStats.literalValues.has(v));
         if (missing.length > 0) {
-          findings.push({
+          push({
             ...base,
             kind: 'union-variant-never',
             seenVariants: seen,

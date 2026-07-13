@@ -78,6 +78,33 @@ test('ignores components with no JSX render sites', () => {
   assert.deepEqual(findingsFor('Unrendered'), []);
 });
 
+test('assigns severity by rule family', () => {
+  assert.equal(findingsFor('Dead')[0].severity, 'definite');
+  assert.equal(findingsFor('TestsOnly')[0].severity, 'definite');
+  for (const component of ['AlwaysOptional', 'BoolOneSided', 'UnionMode']) {
+    const [finding] = findingsFor(component);
+    assert.equal(finding.severity, 'advisory', `${component} should be advisory`);
+  }
+});
+
+test('statistical rules fire at the default threshold (fixture has 3 qualifying sites each)', () => {
+  assert.ok(result.findings.some((f) => f.kind === 'always'));
+  assert.ok(result.findings.some((f) => f.kind === 'boolean-never-false'));
+  assert.ok(result.findings.some((f) => f.kind === 'union-variant-never'));
+});
+
+test('rules option limits which rules run', () => {
+  const filtered = analyzeProject(fixtureTsconfig, { rules: ['never'] });
+  assert.ok(filtered.findings.length > 0);
+  assert.ok(filtered.findings.every((f) => f.kind === 'never'));
+});
+
+test('minSites above the fixture site count suppresses statistical rules only', () => {
+  const strict = analyzeProject(fixtureTsconfig, { minSites: 4 });
+  assert.ok(strict.findings.length > 0);
+  assert.ok(strict.findings.every((f) => f.kind === 'never' || f.kind === 'tests-only'));
+});
+
 test('excludes components defined in test files by default', () => {
   assert.deepEqual(findingsFor('Harness'), []);
 });

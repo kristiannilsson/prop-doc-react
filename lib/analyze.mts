@@ -2,19 +2,23 @@ import path from 'node:path';
 import ts from 'typescript';
 import { collectComponents } from './analyzer/collect-components.mjs';
 import { collectUsages } from './analyzer/collect-usages.mjs';
-import { buildFindings } from './analyzer/build-findings.mjs';
+import { ALL_FINDING_KINDS, DEFAULT_MIN_SITES, FINDING_SEVERITY, buildFindings } from './analyzer/build-findings.mjs';
 import { TEST_FILE_RE } from './analyzer/constants.mjs';
-import type { AnalyzeResult } from './analyzer/types.mjs';
+import type { AnalyzeResult, FindingKind } from './analyzer/types.mjs';
 
-export { TEST_FILE_RE };
+export { ALL_FINDING_KINDS, DEFAULT_MIN_SITES, FINDING_SEVERITY, TEST_FILE_RE };
 
 export interface AnalyzeOptions {
   includeTestComponents?: boolean;
+  /** Only run these rules; defaults to all. */
+  rules?: FindingKind[];
+  /** Minimum non-test site count before statistical rules (always, boolean one-sided, union variants) fire. */
+  minSites?: number;
 }
 
 export function analyzeProject(
   tsconfigPath: string,
-  { includeTestComponents = false }: AnalyzeOptions = {},
+  { includeTestComponents = false, rules, minSites }: AnalyzeOptions = {},
 ): AnalyzeResult {
   if (typeof ts.createProgram !== 'function') {
     throw new Error(
@@ -64,6 +68,8 @@ export function analyzeProject(
     checker,
     isProjectFile,
     includeTestComponents,
+    enabledRules: rules,
+    minSites,
     ts,
   });
 

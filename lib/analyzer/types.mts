@@ -10,6 +10,11 @@ export type FindingKind =
   | 'boolean-never-false'
   | 'union-variant-never';
 
+// 'definite' findings point at dead code; 'advisory' findings are API-design
+// suggestions inferred from usage statistics. Only high-confidence definite
+// findings should fail a CI gate.
+export type FindingSeverity = 'definite' | 'advisory';
+
 export type LiteralValue = string | number | boolean;
 
 export interface PassStats {
@@ -48,6 +53,7 @@ export interface FindingBase {
 
 export interface Finding extends FindingBase {
   kind: FindingKind;
+  severity: FindingSeverity;
   testFiles?: string[];
   nonTestRenderSites?: number;
   missingVariants?: string[];

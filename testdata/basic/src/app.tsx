@@ -33,12 +33,17 @@ export function App() {
       <TestsOnly />
       <Wrapped />
       <Indirect />
+      {/* Statistical rules need >= 3 qualifying non-test sites (default --min-sites). */}
       <AlwaysOptional always="x" />
       <AlwaysOptional always="y" />
+      <AlwaysOptional always="z" />
+      <BoolOneSided enabled />
+      <BoolOneSided enabled={true} />
       <BoolOneSided enabled />
       <BoolOneSided />
       <UnionMode mode="on" />
       <UnionMode mode="off" />
+      <UnionMode mode="on" />
       <UnionMode />
     </div>
   );

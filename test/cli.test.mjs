@@ -50,6 +50,28 @@ test('--help exits 0 with usage', () => {
   assert.match(stdout, /Usage: prop-doc/);
 });
 
+test('--rules limits output, and advisory-only findings exit 0', () => {
+  const { status, stdout } = run(fixtureTsconfig, '--rules=always', '--json');
+  const report = JSON.parse(stdout);
+  assert.ok(report.findings.length > 0);
+  assert.ok(report.findings.every((f) => f.kind === 'always' && f.severity === 'advisory'));
+  assert.equal(status, 0);
+});
+
+test('--min-sites raises the statistical threshold without touching definite rules', () => {
+  const { status, stdout } = run(fixtureTsconfig, '--min-sites', '99', '--json');
+  const report = JSON.parse(stdout);
+  assert.ok(report.findings.length > 0);
+  assert.ok(report.findings.every((f) => f.kind === 'never' || f.kind === 'tests-only'));
+  assert.equal(status, 1);
+});
+
+test('invalid --rules and --min-sites values exit 2', () => {
+  assert.equal(run(fixtureTsconfig, '--rules=bogus').status, 2);
+  assert.equal(run(fixtureTsconfig, '--min-sites=0').status, 2);
+  assert.equal(run(fixtureTsconfig, '--min-sites').status, 2);
+});
+
 test('unknown flags exit 2', () => {
   const { status, stderr } = run(fixtureTsconfig, '--nope');
   assert.equal(status, 2);
