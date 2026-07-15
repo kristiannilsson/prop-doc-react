@@ -1,9 +1,35 @@
 import type ts from 'typescript';
-import type { BodyUsage, ComponentRecord, TsApi } from './types.mjs';
+import type { BodyUsage, ComponentRecord, TextSpan, TsApi } from './types.mjs';
 import { literalKey } from './constants.mjs';
 
 function opaqueUsage(): BodyUsage {
-  return { opaque: true, consumed: new Set(), defaulted: new Map(), restRemainders: [] };
+  return {
+    opaque: true,
+    consumed: new Set(),
+    defaulted: new Map(),
+    restRemainders: [],
+    defaultTargets: new Map(),
+    bindingElementSpans: new Map(),
+  };
+}
+
+// The span deletes the binding element together with one separating comma:
+// up to the next element's start, or (for the last element) back through the
+// previous element's end. A sole element keeps its exact span.
+function bindingElementDeletionSpan(
+  pattern: ts.ObjectBindingPattern,
+  index: number,
+  sf: ts.SourceFile,
+): TextSpan {
+  const elements = pattern.elements;
+  const element = elements[index];
+  if (index < elements.length - 1) {
+    return { file: sf.fileName, start: element.getStart(sf), end: elements[index + 1].getStart(sf) };
+  }
+  if (index > 0) {
+    return { file: sf.fileName, start: elements[index - 1].getEnd(), end: element.getEnd() };
+  }
+  return { file: sf.fileName, start: element.getStart(sf), end: element.getEnd() };
 }
 
 /** Type-tagged literal key of a default expression, or undefined when it isn't a literal. */
@@ -88,6 +114,76 @@ function isBindingReferenced(
   return false;
 }
 
+interface PatternContext {
+  usage: BodyUsage;
+  identifiers: Map<string, ts.Identifier[]>;
+  checker: ts.TypeChecker;
+  tsApi: TsApi;
+}
+
+function recordBindingElement(
+  pattern: ts.ObjectBindingPattern,
+  index: number,
+  propName: string,
+  { usage, identifiers, checker, tsApi }: PatternContext,
+): void {
+  const element = pattern.elements[index];
+  const sf = element.getSourceFile();
+  usage.bindingElementSpans.set(
+    propName,
+    usage.bindingElementSpans.has(propName)
+      ? 'multiple'
+      : bindingElementDeletionSpan(pattern, index, sf),
+  );
+  if (element.initializer) {
+    usage.defaulted.set(propName, literalKeyOfExpression(element.initializer, tsApi));
+    usage.defaultTargets.set(propName, {
+      file: sf.fileName,
+      start: element.initializer.getStart(sf),
+      end: element.initializer.getEnd(),
+    });
+  } else if (tsApi.isIdentifier(element.name)) {
+    // No default yet: a zero-length span marks where one can be inserted.
+    usage.defaultTargets.set(propName, {
+      file: sf.fileName,
+      start: element.name.getEnd(),
+      end: element.name.getEnd(),
+    });
+  }
+  // Nested destructuring always reads into the prop; a plain binding only
+  // counts as consumed when something references it.
+  if (
+    !tsApi.isIdentifier(element.name) ||
+    isBindingReferenced(element.name, identifiers, checker, tsApi)
+  ) {
+    usage.consumed.add(propName);
+  }
+}
+
+function processBindingPattern(pattern: ts.ObjectBindingPattern, ctx: PatternContext): void {
+  const { usage, identifiers, checker, tsApi } = ctx;
+  const named = new Set<string>();
+  let rest: ts.Identifier | undefined;
+  for (const [index, element] of pattern.elements.entries()) {
+    if (element.dotDotDotToken) {
+      if (tsApi.isIdentifier(element.name)) rest = element.name;
+      else usage.opaque = true;
+      continue;
+    }
+    const nameSource = element.propertyName ?? element.name;
+    if (!tsApi.isIdentifier(nameSource) && !tsApi.isStringLiteral(nameSource)) {
+      // Computed or otherwise dynamic property name: can't tell which prop.
+      usage.opaque = true;
+      continue;
+    }
+    named.add(nameSource.text);
+    recordBindingElement(pattern, index, nameSource.text, ctx);
+  }
+  if (rest && isBindingReferenced(rest, identifiers, checker, tsApi)) {
+    usage.restRemainders.push(named);
+  }
+}
+
 /**
  * Analyze how a component body uses its props, conservatively: any use of the
  * props object that isn't a property access or a destructuring makes the
@@ -102,45 +198,19 @@ export function analyzeBodyUsage(
   const param = fnNode.parameters[0];
   if (!param || !fnNode.body) return opaqueUsage();
 
-  const usage: BodyUsage = { opaque: false, consumed: new Set(), defaulted: new Map(), restRemainders: [] };
+  const usage: BodyUsage = {
+    opaque: false,
+    consumed: new Set(),
+    defaulted: new Map(),
+    restRemainders: [],
+    defaultTargets: new Map(),
+    bindingElementSpans: new Map(),
+  };
   const identifiers = collectValueIdentifiers(fnNode, tsApi);
-
-  function processPattern(pattern: ts.ObjectBindingPattern): void {
-    const named = new Set<string>();
-    let rest: ts.Identifier | undefined;
-    for (const element of pattern.elements) {
-      if (element.dotDotDotToken) {
-        if (tsApi.isIdentifier(element.name)) rest = element.name;
-        else usage.opaque = true;
-        continue;
-      }
-      const nameSource = element.propertyName ?? element.name;
-      let propName: string;
-      if (tsApi.isIdentifier(nameSource)) propName = nameSource.text;
-      else if (tsApi.isStringLiteral(nameSource)) propName = nameSource.text;
-      else {
-        // Computed or otherwise dynamic property name: can't tell which prop.
-        usage.opaque = true;
-        continue;
-      }
-      named.add(propName);
-      if (element.initializer) {
-        usage.defaulted.set(propName, literalKeyOfExpression(element.initializer, tsApi));
-      }
-      if (tsApi.isIdentifier(element.name)) {
-        if (isBindingReferenced(element.name, identifiers, checker, tsApi)) usage.consumed.add(propName);
-      } else {
-        // Nested destructuring reads into the prop; count it as consumed.
-        usage.consumed.add(propName);
-      }
-    }
-    if (rest && isBindingReferenced(rest, identifiers, checker, tsApi)) {
-      usage.restRemainders.push(named);
-    }
-  }
+  const ctx: PatternContext = { usage, identifiers, checker, tsApi };
 
   if (tsApi.isObjectBindingPattern(param.name)) {
-    processPattern(param.name);
+    processBindingPattern(param.name, ctx);
     return usage.opaque ? opaqueUsage() : usage;
   }
   if (!tsApi.isIdentifier(param.name)) return opaqueUsage();
@@ -165,7 +235,7 @@ export function analyzeBodyUsage(
       parent.initializer === id &&
       tsApi.isObjectBindingPattern(parent.name)
     ) {
-      processPattern(parent.name);
+      processBindingPattern(parent.name, ctx);
     } else {
       // The props object escapes (aliased, spread, passed to a call, ...).
       return opaqueUsage();

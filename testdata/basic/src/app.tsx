@@ -6,6 +6,9 @@ import {
   Dead,
   DefaultDead,
   DefaultMaybe,
+  DropDead,
+  FoldInsert,
+  FoldReplace,
   Indirect,
   Inherit,
   Kids,
@@ -16,6 +19,7 @@ import {
   SameLiteral,
   SpreadTarget,
   Suppressed,
+  TrimBinding,
   TestsOnly,
   Unconsumed,
   UnionCollide,
@@ -76,6 +80,14 @@ export function App() {
       <SameLiteral tone="quiet" varied="a" />
       <SameLiteral tone="quiet" varied="b" />
       <SameLiteral tone="quiet" varied="c" />
+      <FoldReplace tone="calm" />
+      <FoldReplace tone="calm" />
+      <FoldReplace tone="calm" />
+      <FoldInsert pad={4} />
+      <FoldInsert pad={4} />
+      <FoldInsert pad={4} />
+      <DropDead keep="k" />
+      <TrimBinding a="x" />
       <PassedDefault size={7} />
       <PassedDefault size={7} />
       <PassedDefault size={7} />

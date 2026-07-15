@@ -1,11 +1,15 @@
 import type ts from 'typescript';
 import type {
+  BodyUsage,
   ComponentRecord,
   Finding,
   FindingKind,
   FindingSeverity,
+  FixEdit,
   OwnPropMeta,
+  PassStats,
   SkippedComponent,
+  TextSpan,
   TsApi,
   UnionVariant,
 } from './types.mjs';
@@ -32,6 +36,18 @@ function displayLiteral(key: string): string {
   return key.startsWith('string:')
     ? JSON.stringify(key.slice('string:'.length))
     : key.slice(key.indexOf(':') + 1);
+}
+
+/** Whether a type-tagged literal key can be rendered back into source text. */
+function isSourceableKey(key: string): boolean {
+  return key.startsWith('string:') || key.startsWith('number:');
+}
+
+/** Render a type-tagged literal key as source text: strings single-quoted, numbers raw. */
+function sourceTextOfKey(key: string): string {
+  if (key.startsWith('number:')) return key.slice('number:'.length);
+  const value = key.slice('string:'.length);
+  return `'${value.replaceAll('\\', '\\\\').replaceAll("'", "\\'")}'`;
 }
 
 export const ALL_FINDING_KINDS = Object.keys(FINDING_SEVERITY) as FindingKind[];
@@ -120,6 +136,67 @@ function propSuppression(
   return kinds.size > 0 ? kinds : undefined;
 }
 
+/** Type-tagged literal key of a union member type node, or undefined for non-literal members. */
+function unionMemberNodeKey(node: ts.TypeNode, tsApi: TsApi): string | undefined {
+  if (!tsApi.isLiteralTypeNode(node)) return undefined;
+  const literal = node.literal;
+  if (tsApi.isStringLiteral(literal)) return literalKey(literal.text);
+  if (tsApi.isNumericLiteral(literal)) return literalKey(Number(literal.text));
+  if (
+    tsApi.isPrefixUnaryExpression(literal) &&
+    literal.operator === tsApi.SyntaxKind.MinusToken &&
+    tsApi.isNumericLiteral(literal.operand)
+  ) {
+    return literalKey(-Number(literal.operand.text));
+  }
+  return undefined;
+}
+
+// The span deletes the declaration's whole line when it stands alone: the
+// preceding newline and indentation, the node (separator included), and any
+// trailing line comment.
+function declarationDeletionSpan(decl: ts.Declaration, sf: ts.SourceFile): TextSpan {
+  const text = sf.text;
+  let start = decl.getStart(sf);
+  while (start > 0 && (text[start - 1] === ' ' || text[start - 1] === '\t')) start -= 1;
+  if (start > 0 && text[start - 1] === '\n') {
+    start -= 1;
+    if (start > 0 && text[start - 1] === '\r') start -= 1;
+  }
+  let end = decl.getEnd();
+  if (text[end] === ';' || text[end] === ',') end += 1;
+  let probe = end;
+  while (probe < text.length && (text[probe] === ' ' || text[probe] === '\t')) probe += 1;
+  if (text.startsWith('//', probe)) {
+    while (probe < text.length && text[probe] !== '\n' && text[probe] !== '\r') probe += 1;
+    end = probe;
+  }
+  return { file: sf.fileName, start, end };
+}
+
+/** Declaration-side fix targets, when the prop is one plain property signature in project code. */
+function declarationNodeInfo(
+  prop: ts.Symbol,
+  tsApi: TsApi,
+): Pick<OwnPropMeta, 'declNodeSpan' | 'typeNodeSpan' | 'typeNodeIsWideKeyword' | 'unionMemberNodes'> {
+  const decls = prop.declarations ?? [];
+  const decl = decls.length === 1 ? decls[0] : undefined;
+  if (!decl || !(tsApi.isPropertySignature(decl) || tsApi.isPropertyDeclaration(decl)) || !decl.type) {
+    return {};
+  }
+  const sf = decl.getSourceFile();
+  const typeNode = decl.type;
+  return {
+    declNodeSpan: declarationDeletionSpan(decl, sf),
+    typeNodeSpan: { file: sf.fileName, start: typeNode.getStart(sf), end: typeNode.getEnd() },
+    typeNodeIsWideKeyword:
+      typeNode.kind === tsApi.SyntaxKind.StringKeyword || typeNode.kind === tsApi.SyntaxKind.NumberKeyword,
+    unionMemberNodes: tsApi.isUnionTypeNode(typeNode)
+      ? typeNode.types.map((t) => ({ key: unionMemberNodeKey(t, tsApi), text: t.getText(sf) }))
+      : undefined,
+  };
+}
+
 function ownProps(
   component: ComponentRecord,
   checker: ts.TypeChecker,
@@ -148,10 +225,80 @@ function ownProps(
         (nonNullable.isUnion() && nonNullable.types.every((t) => (t.flags & wideFlags) !== 0)),
       unionVariants: unionLiteralVariants(propType, tsApi),
       suppressed: propSuppression(prop, isProjectFile, tsApi),
+      ...declarationNodeInfo(prop, tsApi),
     });
   }
 
   return result;
+}
+
+/**
+ * same-literal fix: fold the literal into the destructuring default, then
+ * delete the attribute at every callsite. Behavior-preserving only when EVERY
+ * render site (test files included) verifiably passes that exact literal —
+ * a site omitting the prop would observe the new default, and non-literal
+ * values can't be verified.
+ */
+function sameLiteralFix(
+  component: ComponentRecord,
+  prop: OwnPropMeta,
+  key: string,
+  spans: TextSpan[] | undefined,
+  defaultTarget: TextSpan | undefined,
+): FixEdit[] | undefined {
+  if (!prop.optional || defaultTarget === undefined || !isSourceableKey(key)) return undefined;
+  if (!spans || spans.length !== component.renderSites) return undefined;
+  const literalText = sourceTextOfKey(key);
+  const defaultEdit: FixEdit =
+    defaultTarget.start === defaultTarget.end
+      ? { ...defaultTarget, newText: ` = ${literalText}` } // insert after the binding name
+      : { ...defaultTarget, newText: literalText }; // replace the (never-exercised) default
+  return [defaultEdit, ...spans.map((s) => ({ ...s, newText: '' }))];
+}
+
+/** type-wider-than-usage fix: replace the bare `string`/`number` keyword with the observed-literal union. */
+function typeWiderFix(prop: OwnPropMeta, stats: PassStats): FixEdit[] | undefined {
+  // A test-file site passing a non-literal value would no longer typecheck
+  // against the narrowed union, so the fix requires literals everywhere.
+  if (!prop.typeNodeSpan || !prop.typeNodeIsWideKeyword || stats.unknownValueInTest) return undefined;
+  const keys = [...stats.literalAttrSpans.keys()];
+  if (keys.length === 0 || !keys.every(isSourceableKey)) return undefined;
+  const texts = keys.map(sourceTextOfKey).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  return [{ ...prop.typeNodeSpan, newText: texts.join(' | ') }];
+}
+
+/** union-variant-never fix: rewrite the direct union type node keeping only members some site passes. */
+function unionVariantFix(prop: OwnPropMeta, stats: PassStats): FixEdit[] | undefined {
+  if (!prop.typeNodeSpan || !prop.unionMemberNodes || stats.unknownValueInTest) return undefined;
+  // Only variants that no site anywhere (test files included) passes may go;
+  // non-literal members (e.g. an explicit `undefined`) are always kept.
+  const kept = prop.unionMemberNodes.filter((m) => m.key === undefined || stats.literalAttrSpans.has(m.key));
+  if (kept.length === prop.unionMemberNodes.length || !kept.some((m) => m.key !== undefined)) return undefined;
+  return [{ ...prop.typeNodeSpan, newText: kept.map((m) => m.text).join(' | ') }];
+}
+
+/**
+ * Whole-prop removal (never / unconsumed / callback-never-invoked): delete
+ * the declaration line, the (unreferenced) destructuring binding, and every
+ * callsite attribute. Only when the body verifiably doesn't consume the prop
+ * and every pass is an attribute whose initializer is side-effect-free —
+ * a spread, JSX nesting, or a call-expression value blocks the fix.
+ */
+function removePropFix(
+  prop: OwnPropMeta,
+  stats: PassStats | undefined,
+  usage: BodyUsage,
+): FixEdit[] | undefined {
+  if (prop.name === 'children' || usage.opaque || !prop.declNodeSpan) return undefined;
+  const binding = usage.bindingElementSpans.get(prop.name);
+  if (binding === 'multiple') return undefined;
+  if (stats && (stats.passedViaNonAttribute || stats.deletableAttrSpans.length !== stats.passedAttrCount)) {
+    return undefined;
+  }
+  const edits: FixEdit[] = [{ ...prop.declNodeSpan, newText: '' }];
+  if (binding) edits.push({ ...binding, newText: '' });
+  for (const span of stats?.deletableAttrSpans ?? []) edits.push({ ...span, newText: '' });
+  return edits;
 }
 
 function compareFindingsByLocation(a: Finding | SkippedComponent, b: Finding | SkippedComponent): number {
@@ -213,9 +360,11 @@ export function buildFindings({
       // required props too, whether or not any parent passes the prop.
       if (!isConsumed(usage, prop.name)) {
         if (prop.isCallable && passedStats) {
-          if (active('callback-never-invoked')) push({ ...base, kind: 'callback-never-invoked' });
+          if (active('callback-never-invoked')) {
+            push({ ...base, kind: 'callback-never-invoked', fix: removePropFix(prop, passedStats, usage) });
+          }
         } else if (active('unconsumed')) {
-          push({ ...base, kind: 'unconsumed' });
+          push({ ...base, kind: 'unconsumed', fix: removePropFix(prop, passedStats, usage) });
         }
       }
 
@@ -267,7 +416,19 @@ export function buildFindings({
         literalSites &&
         passedStats.literalValues.size === 1
       ) {
-        push({ ...base, kind: 'same-literal', literalValue: displayLiteral([...passedStats.literalValues][0]) });
+        const onlyKey = [...passedStats.literalValues][0];
+        push({
+          ...base,
+          kind: 'same-literal',
+          literalValue: displayLiteral(onlyKey),
+          fix: sameLiteralFix(
+            component,
+            prop,
+            onlyKey,
+            passedStats.literalAttrSpans.get(onlyKey),
+            usage.defaultTargets.get(prop.name),
+          ),
+        });
       }
 
       // Wide string/number props whose observed values are a small repeated
@@ -286,6 +447,7 @@ export function buildFindings({
           ...base,
           kind: 'type-wider-than-usage',
           observedValues: [...passedStats.literalValues].map(displayLiteral).sort(),
+          fix: typeWiderFix(prop, passedStats),
         });
       }
 
@@ -302,6 +464,7 @@ export function buildFindings({
             kind: 'union-variant-never',
             seenVariants: seen.map((v) => v.label),
             missingVariants: missing.map((v) => v.label),
+            fix: unionVariantFix(prop, passedStats),
           });
         }
       }
@@ -310,7 +473,15 @@ export function buildFindings({
       if (!prop.optional) continue;
 
       if (!passedStats) {
-        if (active('never')) push({ ...base, kind: 'never' });
+        if (active('never')) {
+          // Removal is only safe when the body verifiably ignores the prop;
+          // a body still reading it needs a human to resolve the dead branch.
+          push({
+            ...base,
+            kind: 'never',
+            fix: isConsumed(usage, prop.name) ? undefined : removePropFix(prop, undefined, usage),
+          });
+        }
         continue;
       }
 

@@ -19,8 +19,10 @@ interface RecordPassedOptions {
   literal?: LiteralValue;
   /** For non-literal values: whether the expression's type admits undefined. Defaults to true (conservative). */
   possiblyUndefined?: boolean;
-  /** For literal values: the span deleting the source attribute (fix target). */
-  span?: TextSpan;
+  /** For attribute passes: the span deleting the source attribute (fix target). */
+  attrSpan?: TextSpan;
+  /** For attribute passes: the initializer is side-effect-free, so whole-prop removal may delete the attribute. */
+  attrDeletable?: boolean;
 }
 
 function isJsxTagContext(identifier: ts.Identifier, tsApi: TsApi): boolean {
@@ -91,6 +93,16 @@ function attributeDeletionSpan(attr: ts.JsxAttribute, sf: ts.SourceFile): TextSp
   return { file: sf.fileName, start, end: attr.getEnd() };
 }
 
+// Whether deleting the attribute cannot change behavior: evaluating its
+// initializer has no side effects. Literals are handled by the caller.
+function isSideEffectFreeInitializer(attr: ts.JsxAttribute, tsApi: TsApi): boolean {
+  if (!attr.initializer) return true; // bare attribute
+  if (tsApi.isStringLiteral(attr.initializer)) return true;
+  if (!tsApi.isJsxExpression(attr.initializer) || !attr.initializer.expression) return false;
+  const expr = attr.initializer.expression;
+  return tsApi.isArrowFunction(expr) || tsApi.isFunctionExpression(expr) || tsApi.isIdentifier(expr);
+}
+
 function typeAdmitsUndefined(type: ts.Type, tsApi: TsApi): boolean {
   const loose =
     tsApi.TypeFlags.Undefined | tsApi.TypeFlags.Void | tsApi.TypeFlags.Any | tsApi.TypeFlags.Unknown;
@@ -136,7 +148,11 @@ function getOrCreatePassStats(component: ComponentRecord, propName: string): Pas
     literalValues: new Set(),
     unknownValueInNonTest: false,
     possiblyUndefinedInNonTest: false,
+    unknownValueInTest: false,
     literalAttrSpans: new Map(),
+    passedAttrCount: 0,
+    deletableAttrSpans: [],
+    passedViaNonAttribute: false,
   };
   component.passed.set(propName, created);
   return created;
@@ -151,14 +167,23 @@ function recordPassed(
   const stats = getOrCreatePassStats(component, propName);
   stats.files.add(fileName);
 
-  if (options.literal !== undefined && options.span !== undefined) {
-    const key = literalKey(options.literal);
-    const spans = stats.literalAttrSpans.get(key);
-    if (spans) spans.push(options.span);
-    else stats.literalAttrSpans.set(key, [options.span]);
+  if (options.attrSpan === undefined) {
+    stats.passedViaNonAttribute = true;
+  } else {
+    stats.passedAttrCount += 1;
+    if (options.attrDeletable) stats.deletableAttrSpans.push(options.attrSpan);
+    if (options.literal !== undefined) {
+      const key = literalKey(options.literal);
+      const spans = stats.literalAttrSpans.get(key);
+      if (spans) spans.push(options.attrSpan);
+      else stats.literalAttrSpans.set(key, [options.attrSpan]);
+    }
   }
 
-  if (options.isTestFile) return;
+  if (options.isTestFile) {
+    if (options.fromSpread || options.literal === undefined) stats.unknownValueInTest = true;
+    return;
+  }
 
   stats.nonTestSites.add(options.siteId);
   if (options.fromSpread) {
@@ -188,6 +213,60 @@ export function collectUsages({
   isTestFile,
   ts: tsApi,
 }: CollectUsagesArgs): void {
+  function recordAttribute(
+    component: ComponentRecord,
+    attr: ts.JsxAttribute,
+    sf: ts.SourceFile,
+    inTestFile: boolean,
+    siteId: string,
+  ): void {
+    const literal = literalFromAttribute(attr, tsApi);
+    let possiblyUndefined: boolean | undefined;
+    if (
+      literal === undefined &&
+      attr.initializer &&
+      tsApi.isJsxExpression(attr.initializer) &&
+      attr.initializer.expression
+    ) {
+      possiblyUndefined = typeAdmitsUndefined(
+        checker.getTypeAtLocation(attr.initializer.expression),
+        tsApi,
+      );
+    }
+    recordPassed(component, attr.name.getText(sf), sf.fileName, {
+      isTestFile: inTestFile,
+      siteId,
+      literal,
+      possiblyUndefined,
+      attrSpan: attributeDeletionSpan(attr, sf),
+      attrDeletable: literal !== undefined || isSideEffectFreeInitializer(attr, tsApi),
+    });
+  }
+
+  function recordSpreadAttribute(
+    component: ComponentRecord,
+    attr: ts.JsxSpreadAttribute,
+    sf: ts.SourceFile,
+    inTestFile: boolean,
+    siteId: string,
+  ): void {
+    const spreadType = checker.getTypeAtLocation(attr.expression);
+    const members = spreadType.isUnion() ? spreadType.types : [spreadType];
+    for (const member of members) {
+      if (isOpaqueType(member, checker, tsApi)) {
+        component.opaqueSpreadFiles.add(sf.fileName);
+      } else {
+        for (const prop of member.getProperties()) {
+          recordPassed(component, prop.name, sf.fileName, {
+            isTestFile: inTestFile,
+            siteId,
+            fromSpread: true,
+          });
+        }
+      }
+    }
+  }
+
   function recordRenderSite(
     tagName: ts.JsxTagNameExpression,
     attributes: ts.JsxAttributes,
@@ -208,44 +287,8 @@ export function collectUsages({
     if (!inTestFile) component.renderSitesNonTest += 1;
 
     for (const attr of attributes.properties) {
-      if (tsApi.isJsxAttribute(attr)) {
-        const literal = literalFromAttribute(attr, tsApi);
-        let possiblyUndefined: boolean | undefined;
-        if (
-          literal === undefined &&
-          attr.initializer &&
-          tsApi.isJsxExpression(attr.initializer) &&
-          attr.initializer.expression
-        ) {
-          possiblyUndefined = typeAdmitsUndefined(
-            checker.getTypeAtLocation(attr.initializer.expression),
-            tsApi,
-          );
-        }
-        recordPassed(component, attr.name.getText(sf), sf.fileName, {
-          isTestFile: inTestFile,
-          siteId,
-          literal,
-          possiblyUndefined,
-          span: literal === undefined ? undefined : attributeDeletionSpan(attr, sf),
-        });
-      } else if (tsApi.isJsxSpreadAttribute(attr)) {
-        const spreadType = checker.getTypeAtLocation(attr.expression);
-        const members = spreadType.isUnion() ? spreadType.types : [spreadType];
-        for (const member of members) {
-          if (isOpaqueType(member, checker, tsApi)) {
-            component.opaqueSpreadFiles.add(sf.fileName);
-          } else {
-            for (const prop of member.getProperties()) {
-              recordPassed(component, prop.name, sf.fileName, {
-                isTestFile: inTestFile,
-                siteId,
-                fromSpread: true,
-              });
-            }
-          }
-        }
-      }
+      if (tsApi.isJsxAttribute(attr)) recordAttribute(component, attr, sf, inTestFile, siteId);
+      else if (tsApi.isJsxSpreadAttribute(attr)) recordSpreadAttribute(component, attr, sf, inTestFile, siteId);
     }
 
     if (childrenPassed) {

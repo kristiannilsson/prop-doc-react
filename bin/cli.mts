@@ -37,10 +37,14 @@ Options:
   --assume-internal          skip public-API detection: treat every component
                              as having no consumers outside this program
   --fix                      apply safe fixes, then re-analyze and report what
-                             remains (currently: passed-equals-default deletes
-                             the redundant attribute at each callsite);
-                             low-confidence, public-API, and baselined
-                             findings are never fixed
+                             remains; fixes passed-equals-default and
+                             same-literal (delete/fold redundant attributes),
+                             type-wider-than-usage (narrow the type),
+                             union-variant-never (prune unseen variants), and
+                             never/unconsumed/callback-never-invoked (remove
+                             the prop when verifiably safe); low-confidence,
+                             public-API, and baselined findings are never
+                             fixed
   --dry-run                  with --fix: print the planned edits without
                              changing any file
   --help                     show this help
@@ -293,7 +297,13 @@ if (asJson) {
         `\n${heading(title)} ${subdued(`(${fixResult.edits.length} edit(s) for ${fixResult.findingsFixed} finding(s))`)}`,
       );
       for (const edit of fixResult.edits) {
-        console.log(`  ${rel(edit.file)}:${edit.line}  removed ${edit.removed}`);
+        const change =
+          edit.removed && edit.newText
+            ? `replaced ${edit.removed} with ${edit.newText.trim()}`
+            : edit.removed
+              ? `removed ${edit.removed}`
+              : `inserted ${edit.newText.trim()}`;
+        console.log(`  ${rel(edit.file)}:${edit.line}  ${change}`);
       }
     }
   }

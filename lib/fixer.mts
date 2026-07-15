@@ -5,7 +5,15 @@ import type { Finding, FindingKind, FixEdit } from './analyzer/types.mjs';
  * Rules whose `fix` edits are mechanical and behavior-preserving. Fixability
  * is a per-rule property, independent of the definite/advisory severity axis.
  */
-export const FIXABLE_KINDS: ReadonlySet<FindingKind> = new Set<FindingKind>(['passed-equals-default']);
+export const FIXABLE_KINDS: ReadonlySet<FindingKind> = new Set<FindingKind>([
+  'passed-equals-default',
+  'same-literal',
+  'type-wider-than-usage',
+  'union-variant-never',
+  'never',
+  'unconsumed',
+  'callback-never-invoked',
+]);
 
 export interface FixPlan {
   /** The findings whose edits will be applied, in report order. */
@@ -34,10 +42,21 @@ export function planFixes(
       !isExcluded(f),
   );
 
+  // Two findings may target the same source range (e.g. same-literal and
+  // union-variant-never both rewriting one prop's declaration). Accept
+  // findings in report order and skip any whose edits would overlap an
+  // accepted edit; the skipped one is re-evaluated by the post-fix re-run.
+  const accepted: Finding[] = [];
   const editsByFile = new Map<string, FixEdit[]>();
   let editCount = 0;
+  const overlaps = (edit: FixEdit): boolean =>
+    (editsByFile.get(edit.file) ?? []).some((a) => edit.start < a.end && a.start < edit.end);
+
   for (const finding of fixable) {
-    for (const edit of finding.fix ?? []) {
+    const edits = finding.fix ?? [];
+    if (edits.some(overlaps)) continue;
+    accepted.push(finding);
+    for (const edit of edits) {
       const list = editsByFile.get(edit.file);
       if (list) list.push(edit);
       else editsByFile.set(edit.file, [edit]);
@@ -45,24 +64,21 @@ export function planFixes(
     }
   }
 
-  for (const [file, edits] of editsByFile) {
+  for (const edits of editsByFile.values()) {
     edits.sort((a, b) => a.start - b.start);
-    for (let i = 1; i < edits.length; i++) {
-      if (edits[i].start < edits[i - 1].end) {
-        throw new Error(`Internal error: overlapping fix edits in ${file}`);
-      }
-    }
   }
 
-  return { findings: fixable, editsByFile, editCount };
+  return { findings: accepted, editsByFile, editCount };
 }
 
 export interface AppliedEdit {
   file: string;
   /** 1-based line the edit ends on, in the pre-fix text. */
   line: number;
-  /** The removed source text, trimmed for display. */
+  /** The removed source text, trimmed for display; empty for pure insertions. */
   removed: string;
+  /** The inserted text; empty for pure deletions. */
+  newText: string;
 }
 
 /**
@@ -74,9 +90,9 @@ export function applyFixes(plan: FixPlan, { dryRun = false } = {}): AppliedEdit[
   for (const [file, edits] of plan.editsByFile) {
     const raw = fs.readFileSync(file, 'utf8');
     // Spans are relative to the text as TypeScript read it, which excludes a BOM (U+FEFF).
-    const bom = raw.charCodeAt(0) === 0xfeff ? raw[0] : '';
+    const bom = raw.codePointAt(0) === 0xfeff ? raw[0] : '';
     const text = raw.slice(bom.length);
-    if (edits[edits.length - 1].end > text.length) {
+    if ((edits.at(-1) as FixEdit).end > text.length) {
       throw new Error(`Fix span out of range in ${file}; the file changed since the analysis ran`);
     }
 
@@ -90,6 +106,7 @@ export function applyFixes(plan: FixPlan, { dryRun = false } = {}): AppliedEdit[
         file,
         line: text.slice(0, edit.end).split('\n').length,
         removed: text.slice(edit.start, edit.end).trim(),
+        newText: edit.newText,
       });
     }
     if (!dryRun) fs.writeFileSync(file, bom + updated);

@@ -183,3 +183,33 @@ interface OpaqueBodyProps {
 export function OpaqueBody(props: OpaqueBodyProps) {
   return <div>{JSON.stringify(props)}</div>;
 }
+
+interface FoldReplaceProps {
+  tone?: string; // every site passes "calm" but the default says "loud" -> 'same-literal'; the fix folds the default
+}
+export function FoldReplace({ tone = 'loud' }: FoldReplaceProps) {
+  return <div>{tone}</div>;
+}
+
+interface FoldInsertProps {
+  pad?: number; // every site passes 4 and there is no default -> 'same-literal'; the fix inserts one
+}
+export function FoldInsert({ pad }: FoldInsertProps) {
+  return <div>{pad}</div>;
+}
+
+interface DropDeadProps {
+  keep?: string;
+  vestigial?: number; // never passed AND never consumed -> whole-prop removal deletes the declaration
+}
+export function DropDead({ keep }: DropDeadProps) {
+  return <div>{keep}</div>;
+}
+
+interface TrimBindingProps {
+  a?: string;
+  stale?: string; // destructured but unreferenced and never passed -> removal also deletes the binding
+}
+export function TrimBinding({ a, stale }: TrimBindingProps) {
+  return <div>{a}</div>;
+}

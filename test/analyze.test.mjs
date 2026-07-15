@@ -121,7 +121,31 @@ test('excludes components defined in test files by default', () => {
 });
 
 test('counts all components with a props parameter, including test-file ones', () => {
-  assert.equal(result.componentsAnalyzed, 25);
+  assert.equal(result.componentsAnalyzed, 29);
+});
+
+test('unconsumed carries a whole-prop removal fix when callsite values are side-effect-free', () => {
+  const [finding] = findingsFor('Unconsumed');
+  assert.equal(finding.kind, 'unconsumed');
+  assert.equal(finding.fix.length, 2); // declaration line + literal callsite attribute
+  assert.ok(finding.fix.every((e) => e.newText === ''));
+});
+
+test('callback-never-invoked carries a removal fix for inline-arrow callsites', () => {
+  const [finding] = findingsFor('Callbacks');
+  assert.equal(finding.kind, 'callback-never-invoked');
+  assert.equal(finding.fix.length, 2); // declaration line + arrow-function attribute
+});
+
+test('never carries a removal fix only when the body ignores the prop', () => {
+  assert.equal(findingsFor('Dead')[0].fix, undefined); // body reads props.dead
+  const never = findingsFor('DropDead').find((f) => f.kind === 'never');
+  assert.equal(never.fix.length, 1); // declaration line only
+});
+
+test('removing a destructured-but-unreferenced prop also deletes the binding element', () => {
+  const finding = findingsFor('TrimBinding').find((f) => f.kind === 'unconsumed');
+  assert.equal(finding.fix.length, 2); // declaration line + binding element
 });
 
 test('flags props always passed the same literal, quoting strings, sparing varied props', () => {
@@ -152,6 +176,46 @@ test('passed-equals-default carries one deletion edit per verified callsite attr
   }
   // Findings without a fixer stay span-free.
   assert.equal(findingsFor('Dead')[0].fix, undefined);
+});
+
+test('type-wider-than-usage carries a type-narrowing edit', () => {
+  const finding = findingsFor('WideChoice').find((f) => f.kind === 'type-wider-than-usage');
+  assert.equal(finding.fix.length, 1);
+  assert.equal(finding.fix[0].newText, "'a' | 'b'");
+  assert.match(finding.fix[0].file.replaceAll('\\', '/'), /components\.tsx$/);
+});
+
+test('union-variant-never carries a union-rewrite edit keeping the seen variants', () => {
+  const finding = findingsFor('UnionMode').find((f) => f.kind === 'union-variant-never');
+  assert.equal(finding.fix.length, 1);
+  assert.equal(finding.fix[0].newText, "'on' | 'off'");
+});
+
+test('union-variant-never attaches no fix when no variant was verifiably seen', () => {
+  const finding = findingsFor('UnionCollide').find((f) => f.kind === 'union-variant-never');
+  assert.equal(finding.fix, undefined);
+});
+
+test('same-literal fix replaces an existing dead default and deletes every attribute', () => {
+  const finding = findingsFor('FoldReplace').find((f) => f.kind === 'same-literal');
+  assert.equal(finding.fix.length, 4);
+  const [defaultEdit, ...deletions] = finding.fix;
+  assert.equal(defaultEdit.newText, "'calm'");
+  assert.ok(defaultEdit.end > defaultEdit.start, 'replaces the existing default expression');
+  assert.ok(deletions.every((e) => e.newText === ''));
+});
+
+test('same-literal fix inserts a default when none exists', () => {
+  const finding = findingsFor('FoldInsert').find((f) => f.kind === 'same-literal');
+  const defaultEdit = finding.fix.find((e) => e.newText !== '');
+  assert.equal(defaultEdit.newText, ' = 4');
+  assert.equal(defaultEdit.start, defaultEdit.end, 'zero-length span marks an insertion');
+});
+
+test('same-literal attaches no fix without a destructuring target or for required props', () => {
+  // SameLiteral reads props.tone without destructuring; WideChoice.group is required.
+  assert.equal(findingsFor('SameLiteral').find((f) => f.kind === 'same-literal').fix, undefined);
+  assert.equal(findingsFor('WideChoice').find((f) => f.kind === 'same-literal').fix, undefined);
 });
 
 test('flags wide string props whose observed values are a small repeated set', () => {

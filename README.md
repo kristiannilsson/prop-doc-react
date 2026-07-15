@@ -73,7 +73,15 @@ src/containers/common/CustomerSelector.tsx
 
 ### Autofix
 
-`--fix` applies edits that are mechanical and behavior-preserving; currently that is `passed-equals-default`, which deletes the redundant attribute at every callsite whose value was verified to be the literal default (a callsite passing the default through a variable is left alone). Low-confidence, public-API, and baselined findings are never fixed. After writing, the analysis re-runs so the report reflects the post-fix state — including follow-up findings a fix exposes (a prop whose every callsite restated the default becomes a `never` prop once those attributes are gone).
+`--fix` applies edits that are mechanical and behavior-preserving. Fixable rules:
+
+- `passed-equals-default` — deletes the redundant attribute at every callsite whose value was verified to be the literal default (a callsite passing the default through a variable is left alone).
+- `same-literal` — folds the always-passed literal into the destructuring default (replacing a never-exercised default, or inserting one) and deletes the attribute everywhere; only when the prop is optional, destructured, and *every* render site verifiably passes that literal.
+- `type-wider-than-usage` — replaces a bare `string`/`number` annotation with the observed-literal union.
+- `union-variant-never` — rewrites a direct union type keeping only variants some site passes.
+- `never` / `unconsumed` / `callback-never-invoked` — removes the prop entirely: the declaration line, the (unreferenced) destructuring binding, and every callsite attribute. Only when the body verifiably ignores the prop and every callsite value is side-effect-free (literal, arrow/function expression, bare identifier); a spread, JSX nesting, or a call-expression value blocks the fix.
+
+Low-confidence, public-API, and baselined findings are never fixed, and the type edits require literal values at every site (test files included) so narrowing can't break a caller. Runtime behavior is preserved; a pruned union variant can, by design, surface dead body branches (`mode === 'auto'`) as type errors — that's the dead code the finding was about. After writing, the analysis re-runs so the report reflects the post-fix state — including follow-up findings a fix exposes (a prop whose every callsite restated the default becomes a `never` prop once those attributes are gone).
 
 ### Adopting on an existing codebase
 

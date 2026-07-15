@@ -27,7 +27,7 @@ Implemented and shipping:
 - Wide `string`/`number` props whose observed values are a small repeated literal set (`type-wider-than-usage`) — suggest a union type.
 - Whole-program view: multiple tsconfig paths merge into one program, and TypeScript project references are followed automatically, so monorepo cross-package render sites are visible. (Note: cross-package imports must resolve to sources — relative paths or `paths` aliases; imports resolving to a package's built `.d.ts` are not connected back to the source component.)
 - Public-API awareness: components exported from a non-`private` package's entry point (package.json `exports`/`main` or `index.ts` / `src/index.ts` barrels) are marked `publicApi` and never gate CI — external consumers are invisible to the program. `--assume-internal` disables the demotion.
-- Autofix phase 1: `--fix` (with `--dry-run` preview) deletes the redundant attribute at each verified-literal callsite of a `passed-equals-default` finding, then re-runs the analysis; low-confidence, public-API, and baselined findings are never fixed. Findings with a fixer carry their edits in the JSON output (`fix` spans).
+- Autofix phases 1–3: `--fix` (with `--dry-run` preview) fixes `passed-equals-default` (delete the redundant attribute), `same-literal` (fold the literal into the destructuring default, delete the attributes), `type-wider-than-usage` (narrow to the observed union), `union-variant-never` (prune unseen variants), and `never`/`unconsumed`/`callback-never-invoked` (whole-prop removal: declaration, binding, callsite attributes), then re-runs the analysis; low-confidence, public-API, and baselined findings are never fixed, type edits require verified literals at every site (test files included), and removal requires the body to verifiably ignore the prop plus side-effect-free callsite values. Findings with a fixer carry their edits in the JSON output (`fix` spans).
 
 ## Next: See the whole program
 
@@ -53,8 +53,8 @@ Note on ordering: rule trustworthiness is capped by program visibility. "See the
 `--fix`: apply the change a finding implies, instead of just reporting it. Rolled out by fix shape, mechanical single-concern edits first:
 
 1. ~~Callsite deletions — `passed-equals-default` (drop the attribute; it restates the default).~~ Shipped.
-2. Declaration-side edits — `type-wider-than-usage` (narrow to the observed union), `union-variant-never` (drop the dead variant), `same-literal` (fold the value into the destructuring default, then drop the attribute at every callsite).
-3. Whole-prop removal — `never`, `unconsumed`, `callback-never-invoked`: delete the prop from the type, the destructuring, and any callsites. Multi-file and entangled with body usage, so last.
+2. ~~Declaration-side edits — `type-wider-than-usage` (narrow to the observed union), `union-variant-never` (drop the dead variant), `same-literal` (fold the value into the destructuring default, then drop the attribute at every callsite).~~ Shipped.
+3. ~~Whole-prop removal — `never`, `unconsumed`, `callback-never-invoked`: delete the prop from the type, the destructuring, and any callsites. Multi-file and entangled with body usage, so last.~~ Shipped — gated on the body verifiably ignoring the prop and every callsite value being side-effect-free.
 
 Safety rules: fixability is a per-rule property (a fixer exists only where the edit is mechanical and behavior-preserving — the definite/advisory axis measures CI-gate worthiness, not fix safety); never fix low-confidence or `publicApi` findings; a diff/dry-run mode before writing; and the analysis re-runs after applying so a fix that changes the evidence for another finding is caught rather than compounded.
 

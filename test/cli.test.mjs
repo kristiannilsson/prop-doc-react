@@ -161,9 +161,28 @@ test('--fix --dry-run previews edits without touching files, --fix applies and r
     const after = fs.readFileSync(appFile, 'utf8');
     assert.ok(!after.includes('<PassedDefault size={7} />'));
     assert.match(after, /<PassedDefault \/>/);
-    // The report reflects the re-run: the fixed finding is gone, and the
-    // now-never-passed prop surfaces as the follow-up finding.
+    // Declaration-side fixes: narrowed wide type, pruned union, folded defaults.
+    const comps = fs.readFileSync(path.join(dir, 'src', 'components.tsx'), 'utf8');
+    assert.match(comps, /kind\?: 'a' \| 'b';/);
+    assert.match(comps, /mode\?: 'on' \| 'off';/);
+    assert.match(comps, /\{ tone = 'calm' \}/);
+    assert.match(comps, /\{ pad = 4 \}/);
+    assert.ok(!after.includes('tone="calm"'));
+    assert.ok(!after.includes('pad={4}'));
+    // Whole-prop removal: declaration lines, bindings, and callsite attributes.
+    assert.ok(!comps.includes('vestigial'));
+    assert.ok(!comps.includes('stale'));
+    assert.ok(!comps.includes('onDead'));
+    assert.ok(!comps.includes('ignored: number'));
+    assert.match(comps, /TrimBinding\(\{ a \}: TrimBindingProps\)/);
+    assert.ok(!after.includes('onDead'));
+    assert.ok(!after.includes('ignored={1}'));
+    // The report reflects the re-run: the fixed findings are gone, and the
+    // now-never-passed props surface as follow-up findings.
     assert.ok(!fixed.stdout.includes('[passed-equals-default]'));
+    assert.ok(!fixed.stdout.includes('[type-wider-than-usage]'));
+    assert.ok(!fixed.stdout.includes('[unconsumed]'));
+    assert.ok(!fixed.stdout.includes('[callback-never-invoked]'));
     assert.match(fixed.stdout, /size\s+\[never\]/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
@@ -181,7 +200,7 @@ test('--fix --json reports the applied edits and per-finding fix spans', () => {
     assert.equal(report.fixes.dryRun, true);
     assert.ok(report.fixes.findingsFixed >= 1);
     assert.ok(report.fixes.edits.length >= 3);
-    assert.ok(report.fixes.edits.every((e) => e.file && e.line > 0 && e.removed));
+    assert.ok(report.fixes.edits.every((e) => e.file && e.line > 0 && (e.removed || e.newText)));
     const finding = report.findings.find((f) => f.kind === 'passed-equals-default');
     assert.equal(finding.fix.length, 3);
     assert.ok(finding.fix.every((e) => Number.isInteger(e.start) && e.end > e.start && e.newText === ''));
