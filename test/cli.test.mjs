@@ -140,6 +140,61 @@ test('public-API findings do not gate the exit code; --assume-internal restores 
   assert.ok(strictReport.findings.every((f) => f.publicApi === false));
 });
 
+test('--fix --dry-run previews edits without touching files, --fix applies and re-analyzes', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'prop-doc-fix-'));
+  try {
+    fs.cpSync(path.join(pkgRoot, 'testdata', 'basic'), dir, { recursive: true });
+    const tsconfig = path.join(dir, 'tsconfig.json');
+    const appFile = path.join(dir, 'src', 'app.tsx');
+    const before = fs.readFileSync(appFile, 'utf8');
+    assert.match(before, /<PassedDefault size=\{7\} \/>/);
+
+    const dry = run(tsconfig, '--fix', '--dry-run');
+    assert.match(dry.stdout, /Planned Fixes \(no files changed\)/);
+    assert.match(dry.stdout, /removed size=\{7\}/);
+    assert.equal(fs.readFileSync(appFile, 'utf8'), before);
+    // dry-run still reports the finding it would fix
+    assert.match(dry.stdout, /\[passed-equals-default\]/);
+
+    const fixed = run(tsconfig, '--fix');
+    assert.match(fixed.stdout, /Applied Fixes/);
+    const after = fs.readFileSync(appFile, 'utf8');
+    assert.ok(!after.includes('<PassedDefault size={7} />'));
+    assert.match(after, /<PassedDefault \/>/);
+    // The report reflects the re-run: the fixed finding is gone, and the
+    // now-never-passed prop surfaces as the follow-up finding.
+    assert.ok(!fixed.stdout.includes('[passed-equals-default]'));
+    assert.match(fixed.stdout, /size\s+\[never\]/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('--fix --json reports the applied edits and per-finding fix spans', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'prop-doc-fix-'));
+  try {
+    fs.cpSync(path.join(pkgRoot, 'testdata', 'basic'), dir, { recursive: true });
+    const tsconfig = path.join(dir, 'tsconfig.json');
+
+    const dry = run(tsconfig, '--fix', '--dry-run', '--json');
+    const report = JSON.parse(dry.stdout);
+    assert.equal(report.fixes.dryRun, true);
+    assert.ok(report.fixes.findingsFixed >= 1);
+    assert.ok(report.fixes.edits.length >= 3);
+    assert.ok(report.fixes.edits.every((e) => e.file && e.line > 0 && e.removed));
+    const finding = report.findings.find((f) => f.kind === 'passed-equals-default');
+    assert.equal(finding.fix.length, 3);
+    assert.ok(finding.fix.every((e) => Number.isInteger(e.start) && e.end > e.start && e.newText === ''));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('--dry-run without --fix and --fix with --write-baseline exit 2', () => {
+  assert.equal(run(fixtureTsconfig, '--dry-run').status, 2);
+  assert.equal(run(fixtureTsconfig, '--fix', '--write-baseline').status, 2);
+});
+
 test('unknown flags exit 2', () => {
   const { status, stderr } = run(fixtureTsconfig, '--nope');
   assert.equal(status, 2);

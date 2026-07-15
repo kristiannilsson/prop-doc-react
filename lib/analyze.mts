@@ -8,12 +8,16 @@ import { TEST_FILE_RE } from './analyzer/constants.mjs';
 import type { AnalyzeResult, FindingKind } from './analyzer/types.mjs';
 
 export { ALL_FINDING_KINDS, DEFAULT_MIN_SITES, FINDING_SEVERITY, TEST_FILE_RE };
+export { FIXABLE_KINDS, applyFixes, planFixes } from './fixer.mjs';
+export type { AppliedEdit, FixPlan } from './fixer.mjs';
 export type {
   AnalyzeResult,
   Finding,
   FindingKind,
   FindingSeverity,
+  FixEdit,
   SkippedComponent,
+  TextSpan,
 } from './analyzer/types.mjs';
 
 export interface AnalyzeOptions {

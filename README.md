@@ -68,6 +68,12 @@ src/containers/common/CustomerSelector.tsx
 | `--baseline <path>`         | Ignore findings recorded in the baseline; only new findings gate CI |
 | `--write-baseline`          | Record the current findings to the baseline file and exit 0         |
 | `--assume-internal`         | Treat every component as internal (skip public-API demotion)        |
+| `--fix`                     | Apply safe fixes, then re-analyze and report what remains           |
+| `--dry-run`                 | With `--fix`: print the planned edits without changing any file     |
+
+### Autofix
+
+`--fix` applies edits that are mechanical and behavior-preserving; currently that is `passed-equals-default`, which deletes the redundant attribute at every callsite whose value was verified to be the literal default (a callsite passing the default through a variable is left alone). Low-confidence, public-API, and baselined findings are never fixed. After writing, the analysis re-runs so the report reflects the post-fix state — including follow-up findings a fix exposes (a prop whose every callsite restated the default becomes a `never` prop once those attributes are gone).
 
 ### Adopting on an existing codebase
 

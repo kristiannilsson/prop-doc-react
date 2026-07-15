@@ -1,5 +1,5 @@
 import type ts from 'typescript';
-import type { ComponentRecord, LiteralValue, PassStats, TsApi } from './types.mjs';
+import type { ComponentRecord, LiteralValue, PassStats, TextSpan, TsApi } from './types.mjs';
 import { literalKey } from './constants.mjs';
 
 interface CollectUsagesArgs {
@@ -19,6 +19,8 @@ interface RecordPassedOptions {
   literal?: LiteralValue;
   /** For non-literal values: whether the expression's type admits undefined. Defaults to true (conservative). */
   possiblyUndefined?: boolean;
+  /** For literal values: the span deleting the source attribute (fix target). */
+  span?: TextSpan;
 }
 
 function isJsxTagContext(identifier: ts.Identifier, tsApi: TsApi): boolean {
@@ -81,6 +83,14 @@ function literalFromAttribute(attr: ts.JsxAttribute, tsApi: TsApi): LiteralValue
   return undefined;
 }
 
+// The span covers the attribute plus the whitespace separating it from the
+// previous token, so deleting it never leaves double spaces or blank lines.
+function attributeDeletionSpan(attr: ts.JsxAttribute, sf: ts.SourceFile): TextSpan {
+  let start = attr.getStart(sf);
+  while (start > 0 && /\s/.test(sf.text[start - 1])) start -= 1;
+  return { file: sf.fileName, start, end: attr.getEnd() };
+}
+
 function typeAdmitsUndefined(type: ts.Type, tsApi: TsApi): boolean {
   const loose =
     tsApi.TypeFlags.Undefined | tsApi.TypeFlags.Void | tsApi.TypeFlags.Any | tsApi.TypeFlags.Unknown;
@@ -126,6 +136,7 @@ function getOrCreatePassStats(component: ComponentRecord, propName: string): Pas
     literalValues: new Set(),
     unknownValueInNonTest: false,
     possiblyUndefinedInNonTest: false,
+    literalAttrSpans: new Map(),
   };
   component.passed.set(propName, created);
   return created;
@@ -139,6 +150,13 @@ function recordPassed(
 ): void {
   const stats = getOrCreatePassStats(component, propName);
   stats.files.add(fileName);
+
+  if (options.literal !== undefined && options.span !== undefined) {
+    const key = literalKey(options.literal);
+    const spans = stats.literalAttrSpans.get(key);
+    if (spans) spans.push(options.span);
+    else stats.literalAttrSpans.set(key, [options.span]);
+  }
 
   if (options.isTestFile) return;
 
@@ -209,6 +227,7 @@ export function collectUsages({
           siteId,
           literal,
           possiblyUndefined,
+          span: literal === undefined ? undefined : attributeDeletionSpan(attr, sf),
         });
       } else if (tsApi.isJsxSpreadAttribute(attr)) {
         const spreadType = checker.getTypeAtLocation(attr.expression);

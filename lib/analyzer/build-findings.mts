@@ -236,7 +236,15 @@ export function buildFindings({
         passedStats.literalValues.size === 1 &&
         passedStats.literalValues.has(defaultKey);
       if (equalsDefault && active('passed-equals-default')) {
-        push({ ...base, kind: 'passed-equals-default', literalValue: displayLiteral(defaultKey) });
+        push({
+          ...base,
+          kind: 'passed-equals-default',
+          literalValue: displayLiteral(defaultKey),
+          // Only attributes whose value was verified to be this exact literal
+          // have spans under this key; sites passing the default through a
+          // variable stay untouched.
+          fix: (passedStats.literalAttrSpans.get(defaultKey) ?? []).map((s) => ({ ...s, newText: '' })),
+        });
       }
 
       if (

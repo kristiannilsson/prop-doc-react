@@ -142,6 +142,18 @@ test('flags callsites that always pass exactly the destructuring default', () =>
   assert.ok(!kinds.includes('same-literal'));
 });
 
+test('passed-equals-default carries one deletion edit per verified callsite attribute', () => {
+  const finding = findingsFor('PassedDefault').find((f) => f.kind === 'passed-equals-default');
+  assert.equal(finding.fix.length, 3);
+  for (const edit of finding.fix) {
+    assert.match(edit.file.replaceAll('\\', '/'), /testdata\/basic\/src\/app\.tsx$/);
+    assert.ok(Number.isInteger(edit.start) && edit.end > edit.start);
+    assert.equal(edit.newText, '');
+  }
+  // Findings without a fixer stay span-free.
+  assert.equal(findingsFor('Dead')[0].fix, undefined);
+});
+
 test('flags wide string props whose observed values are a small repeated set', () => {
   const finding = findingsFor('WideChoice').find((f) => f.kind === 'type-wider-than-usage');
   assert.ok(finding);

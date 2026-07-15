@@ -23,6 +23,18 @@ export type FindingSeverity = 'definite' | 'advisory';
 
 export type LiteralValue = string | number | boolean;
 
+/** A contiguous character range in a source file. */
+export interface TextSpan {
+  file: string;
+  start: number;
+  end: number;
+}
+
+/** One mechanical text edit; empty `newText` deletes the span. Offsets are into the file's text as analyzed. */
+export interface FixEdit extends TextSpan {
+  newText: string;
+}
+
 export interface PassStats {
   files: Set<string>;
   nonTestSites: Set<string>;
@@ -32,6 +44,13 @@ export interface PassStats {
   unknownValueInNonTest: boolean;
   /** Some non-test site may pass `undefined` (per the value's type), so a destructuring default could still be exercised. */
   possiblyUndefinedInNonTest: boolean;
+  /**
+   * Deletion spans of literal-valued JSX attributes (leading whitespace
+   * included), keyed by the value's type-tagged literal key. Unlike the
+   * evidence fields above this includes test-file sites: a fix must remove
+   * the attribute everywhere, not just where the evidence came from.
+   */
+  literalAttrSpans: Map<string, TextSpan[]>;
 }
 
 /** A literal member of a union prop type: `key` is type-tagged for matching, `label` is for display. */
@@ -106,6 +125,8 @@ export interface Finding extends FindingBase {
   literalValue?: string;
   /** For 'type-wider-than-usage': every value ever passed, rendered for display. */
   observedValues?: string[];
+  /** Mechanical edits that resolve the finding; only rules with a fixer set this. */
+  fix?: FixEdit[];
 }
 
 export interface SkippedComponent {

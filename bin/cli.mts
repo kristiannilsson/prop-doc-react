@@ -4,6 +4,8 @@ import path from 'node:path';
 import process from 'node:process';
 import { ALL_FINDING_KINDS, DEFAULT_MIN_SITES, analyzeProject } from '../lib/analyze.mjs';
 import { BaselineError, DEFAULT_BASELINE_PATH, loadBaseline, writeBaseline } from '../lib/baseline.mjs';
+import { applyFixes, planFixes } from '../lib/fixer.mjs';
+import type { AppliedEdit } from '../lib/fixer.mjs';
 import type { AnalyzeResult, Finding, FindingKind } from '../lib/analyzer/types.mjs';
 
 const HELP = `Usage: prop-doc [tsconfig paths...] [options]
@@ -34,6 +36,13 @@ Options:
                              and exit 0
   --assume-internal          skip public-API detection: treat every component
                              as having no consumers outside this program
+  --fix                      apply safe fixes, then re-analyze and report what
+                             remains (currently: passed-equals-default deletes
+                             the redundant attribute at each callsite);
+                             low-confidence, public-API, and baselined
+                             findings are never fixed
+  --dry-run                  with --fix: print the planned edits without
+                             changing any file
   --help                     show this help
 
 Suppress a finding at the source with a comment on the prop declaration:
@@ -122,6 +131,8 @@ let minSites: number | undefined;
 let baselinePath: string | undefined;
 let writeBaselineMode = false;
 let assumeInternal = false;
+let fixMode = false;
+let dryRun = false;
 const positional: string[] = [];
 
 for (let i = 0; i < args.length; i++) {
@@ -155,8 +166,13 @@ for (let i = 0; i < args.length; i++) {
   } else if (flag === '--baseline') baselinePath = takeValue();
   else if (flag === '--write-baseline') writeBaselineMode = true;
   else if (flag === '--assume-internal') assumeInternal = true;
+  else if (flag === '--fix') fixMode = true;
+  else if (flag === '--dry-run') dryRun = true;
   else usageError(`Unknown option: ${arg}`);
 }
+
+if (dryRun && !fixMode) usageError('--dry-run requires --fix');
+if (fixMode && writeBaselineMode) usageError('--fix cannot be combined with --write-baseline');
 
 const tsconfigPaths = positional.length > 0 ? positional : ['tsconfig.json'];
 
@@ -169,7 +185,7 @@ try {
   process.exit(2);
 }
 
-const { findings, skipped, componentsAnalyzed } = result;
+let { findings, skipped, componentsAnalyzed } = result;
 
 const cwd = process.cwd();
 const rel = (fileName: string): string => path.relative(cwd, fileName).replaceAll('\\', '/');
@@ -185,6 +201,23 @@ try {
 } catch (error) {
   if (error instanceof BaselineError) usageError(error.message);
   throw error;
+}
+
+let fixResult: { edits: AppliedEdit[]; findingsFixed: number } | undefined;
+if (fixMode) {
+  const plan = planFixes(findings, isBaselined);
+  fixResult = { edits: applyFixes(plan, { dryRun }), findingsFixed: plan.findings.length };
+  if (!dryRun && fixResult.edits.length > 0) {
+    // Re-analyze on a fresh program so the report reflects the post-fix state
+    // and a fix that changed the evidence for another finding is caught
+    // rather than compounded.
+    ({ findings, skipped, componentsAnalyzed } = analyzeProject(tsconfigPaths, {
+      includeTestComponents,
+      rules,
+      minSites,
+      assumeInternal,
+    }));
+  }
 }
 
 // Only NEW dead-code findings the analysis is sure about fail the CI gate;
@@ -223,11 +256,21 @@ if (asJson) {
   console.log(
     JSON.stringify(
       {
+        ...(fixResult === undefined
+          ? {}
+          : {
+              fixes: {
+                dryRun,
+                findingsFixed: fixResult.findingsFixed,
+                edits: fixResult.edits.map((e) => ({ ...e, file: rel(e.file) })),
+              },
+            }),
         findings: findings.map((f) => ({
           ...f,
           ...(baselinePath !== undefined ? { baselined: isBaselined(f) } : {}),
           file: rel(f.file),
           testFiles: f.testFiles?.map(rel),
+          fix: f.fix?.map((e) => ({ ...e, file: rel(e.file) })),
         })),
         skippedForOpaqueSpread: skipped.map((s) => ({
           ...s,
@@ -241,6 +284,20 @@ if (asJson) {
     ),
   );
 } else {
+  if (fixResult !== undefined) {
+    if (fixResult.edits.length === 0) {
+      console.log('\nNo fixable findings.');
+    } else {
+      const title = dryRun ? 'Planned Fixes (no files changed)' : 'Applied Fixes';
+      console.log(
+        `\n${heading(title)} ${subdued(`(${fixResult.edits.length} edit(s) for ${fixResult.findingsFixed} finding(s))`)}`,
+      );
+      for (const edit of fixResult.edits) {
+        console.log(`  ${rel(edit.file)}:${edit.line}  removed ${edit.removed}`);
+      }
+    }
+  }
+
   const shown = findings.filter((f) => !isBaselined(f));
   const baselinedCount = findings.length - shown.length;
 
