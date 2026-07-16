@@ -1,4 +1,4 @@
-import type ts from 'typescript';
+import ts from 'typescript';
 import type {
   BodyUsage,
   ComponentRecord,
@@ -10,7 +10,6 @@ import type {
   PassStats,
   SkippedComponent,
   TextSpan,
-  TsApi,
   UnionVariant,
 } from './types.mjs';
 import { analyzeBodyUsage, isConsumed } from './analyze-body.mjs';
@@ -22,10 +21,7 @@ export const FINDING_SEVERITY: Record<FindingKind, FindingSeverity> = {
   unconsumed: 'definite',
   'callback-never-invoked': 'definite',
   always: 'advisory',
-  'boolean-never-true': 'advisory',
-  'boolean-never-false': 'advisory',
   'union-variant-never': 'advisory',
-  'default-never-used': 'advisory',
   'same-literal': 'advisory',
   'passed-equals-default': 'advisory',
   'type-wider-than-usage': 'advisory',
@@ -62,26 +58,25 @@ interface BuildFindingsArgs {
   includeTestComponents: boolean;
   enabledRules?: FindingKind[];
   minSites?: number;
-  ts: TsApi;
 }
 
-function nonNullableMembers(type: ts.UnionType, tsApi: TsApi): ts.Type[] {
+function nonNullableMembers(type: ts.UnionType): ts.Type[] {
   return type.types.filter(
-    (t) => (t.flags & (tsApi.TypeFlags.Undefined | tsApi.TypeFlags.Null)) === 0,
+    (t) => (t.flags & (ts.TypeFlags.Undefined | ts.TypeFlags.Null)) === 0,
   );
 }
 
-function isBooleanLike(type: ts.Type, tsApi: TsApi): boolean {
-  if (type.flags & tsApi.TypeFlags.BooleanLike) return true;
+function isBooleanLike(type: ts.Type): boolean {
+  if (type.flags & ts.TypeFlags.BooleanLike) return true;
   if (!type.isUnion()) return false;
-  const relevant = nonNullableMembers(type, tsApi);
-  return relevant.length > 0 && relevant.every((t) => (t.flags & tsApi.TypeFlags.BooleanLike) !== 0);
+  const relevant = nonNullableMembers(type);
+  return relevant.length > 0 && relevant.every((t) => (t.flags & ts.TypeFlags.BooleanLike) !== 0);
 }
 
-function unionLiteralVariants(type: ts.Type, tsApi: TsApi): UnionVariant[] {
+function unionLiteralVariants(type: ts.Type): UnionVariant[] {
   if (!type.isUnion()) return [];
   const variants = new Map<string, UnionVariant>();
-  for (const member of nonNullableMembers(type, tsApi)) {
+  for (const member of nonNullableMembers(type)) {
     let value: string | number;
     if (member.isStringLiteral()) value = member.value;
     else if (member.isNumberLiteral()) value = member.value;
@@ -109,9 +104,7 @@ function suppressionFromComment(commentText: string): 'all' | FindingKind[] | un
 // (`prop-doc-ignore never, always`) suppresses only those.
 function propSuppression(
   prop: ts.Symbol,
-  isProjectFile: (sf: ts.SourceFile) => boolean,
-  tsApi: TsApi,
-): 'all' | Set<FindingKind> | undefined {
+  isProjectFile: (sf: ts.SourceFile) => boolean,): 'all' | Set<FindingKind> | undefined {
   const kinds = new Set<FindingKind>();
   for (const decl of prop.declarations ?? []) {
     const sf = decl.getSourceFile();
@@ -122,10 +115,10 @@ function propSuppression(
     // comments on lines below the previous token count as leading here.
     const prevTokenLine = sf.getLineAndCharacterOfPosition(fullStart).line;
     const ranges = [
-      ...(tsApi.getLeadingCommentRanges(text, fullStart) ?? []).filter(
+      ...(ts.getLeadingCommentRanges(text, fullStart) ?? []).filter(
         (r) => sf.getLineAndCharacterOfPosition(r.pos).line > prevTokenLine,
       ),
-      ...(tsApi.getTrailingCommentRanges(text, decl.getEnd()) ?? []),
+      ...(ts.getTrailingCommentRanges(text, decl.getEnd()) ?? []),
     ];
     for (const range of ranges) {
       const suppression = suppressionFromComment(text.slice(range.pos, range.end));
@@ -137,15 +130,15 @@ function propSuppression(
 }
 
 /** Type-tagged literal key of a union member type node, or undefined for non-literal members. */
-function unionMemberNodeKey(node: ts.TypeNode, tsApi: TsApi): string | undefined {
-  if (!tsApi.isLiteralTypeNode(node)) return undefined;
+function unionMemberNodeKey(node: ts.TypeNode): string | undefined {
+  if (!ts.isLiteralTypeNode(node)) return undefined;
   const literal = node.literal;
-  if (tsApi.isStringLiteral(literal)) return literalKey(literal.text);
-  if (tsApi.isNumericLiteral(literal)) return literalKey(Number(literal.text));
+  if (ts.isStringLiteral(literal)) return literalKey(literal.text);
+  if (ts.isNumericLiteral(literal)) return literalKey(Number(literal.text));
   if (
-    tsApi.isPrefixUnaryExpression(literal) &&
-    literal.operator === tsApi.SyntaxKind.MinusToken &&
-    tsApi.isNumericLiteral(literal.operand)
+    ts.isPrefixUnaryExpression(literal) &&
+    literal.operator === ts.SyntaxKind.MinusToken &&
+    ts.isNumericLiteral(literal.operand)
   ) {
     return literalKey(-Number(literal.operand.text));
   }
@@ -176,12 +169,10 @@ function declarationDeletionSpan(decl: ts.Declaration, sf: ts.SourceFile): TextS
 
 /** Declaration-side fix targets, when the prop is one plain property signature in project code. */
 function declarationNodeInfo(
-  prop: ts.Symbol,
-  tsApi: TsApi,
-): Pick<OwnPropMeta, 'declNodeSpan' | 'typeNodeSpan' | 'typeNodeIsWideKeyword' | 'unionMemberNodes'> {
+  prop: ts.Symbol,): Pick<OwnPropMeta, 'declNodeSpan' | 'typeNodeSpan' | 'typeNodeIsWideKeyword' | 'unionMemberNodes'> {
   const decls = prop.declarations ?? [];
   const decl = decls.length === 1 ? decls[0] : undefined;
-  if (!decl || !(tsApi.isPropertySignature(decl) || tsApi.isPropertyDeclaration(decl)) || !decl.type) {
+  if (!decl || !(ts.isPropertySignature(decl) || ts.isPropertyDeclaration(decl)) || !decl.type) {
     return {};
   }
   const sf = decl.getSourceFile();
@@ -190,9 +181,9 @@ function declarationNodeInfo(
     declNodeSpan: declarationDeletionSpan(decl, sf),
     typeNodeSpan: { file: sf.fileName, start: typeNode.getStart(sf), end: typeNode.getEnd() },
     typeNodeIsWideKeyword:
-      typeNode.kind === tsApi.SyntaxKind.StringKeyword || typeNode.kind === tsApi.SyntaxKind.NumberKeyword,
-    unionMemberNodes: tsApi.isUnionTypeNode(typeNode)
-      ? typeNode.types.map((t) => ({ key: unionMemberNodeKey(t, tsApi), text: t.getText(sf) }))
+      typeNode.kind === ts.SyntaxKind.StringKeyword || typeNode.kind === ts.SyntaxKind.NumberKeyword,
+    unionMemberNodes: ts.isUnionTypeNode(typeNode)
+      ? typeNode.types.map((t) => ({ key: unionMemberNodeKey(t), text: t.getText(sf) }))
       : undefined,
   };
 }
@@ -200,9 +191,7 @@ function declarationNodeInfo(
 function ownProps(
   component: ComponentRecord,
   checker: ts.TypeChecker,
-  isProjectFile: (sf: ts.SourceFile) => boolean,
-  tsApi: TsApi,
-): OwnPropMeta[] {
+  isProjectFile: (sf: ts.SourceFile) => boolean,): OwnPropMeta[] {
   const param = component.fnNode.parameters[0];
   if (!param) return [];
   const type = checker.getTypeAtLocation(param);
@@ -214,18 +203,18 @@ function ownProps(
 
     const propType = checker.getTypeOfSymbolAtLocation(prop, param);
     const nonNullable = checker.getNonNullableType(propType);
-    const wideFlags = tsApi.TypeFlags.String | tsApi.TypeFlags.Number;
+    const wideFlags = ts.TypeFlags.String | ts.TypeFlags.Number;
     result.push({
       name: prop.name,
-      optional: (prop.flags & tsApi.SymbolFlags.Optional) !== 0,
-      isBoolean: isBooleanLike(propType, tsApi),
+      optional: (prop.flags & ts.SymbolFlags.Optional) !== 0,
+      isBoolean: isBooleanLike(propType),
       isCallable: nonNullable.getCallSignatures().length > 0,
       isWideStringOrNumber:
         (nonNullable.flags & wideFlags) !== 0 ||
         (nonNullable.isUnion() && nonNullable.types.every((t) => (t.flags & wideFlags) !== 0)),
-      unionVariants: unionLiteralVariants(propType, tsApi),
-      suppressed: propSuppression(prop, isProjectFile, tsApi),
-      ...declarationNodeInfo(prop, tsApi),
+      unionVariants: unionLiteralVariants(propType),
+      suppressed: propSuppression(prop, isProjectFile),
+      ...declarationNodeInfo(prop),
     });
   }
 
@@ -317,7 +306,6 @@ export function buildFindings({
   includeTestComponents,
   enabledRules,
   minSites = DEFAULT_MIN_SITES,
-  ts: tsApi,
 }: BuildFindingsArgs): { findings: Finding[]; skipped: SkippedComponent[] } {
   const findings: Finding[] = [];
   const skipped: SkippedComponent[] = [];
@@ -341,8 +329,8 @@ export function buildFindings({
     }
 
     const lowConfidence = component.indirectRefFiles.size > 0;
-    const usage = analyzeBodyUsage(component, checker, tsApi);
-    for (const prop of ownProps(component, checker, isProjectFile, tsApi)) {
+    const usage = analyzeBodyUsage(component, checker);
+    for (const prop of ownProps(component, checker, isProjectFile)) {
       if (prop.suppressed === 'all') continue;
       const suppressed = prop.suppressed;
       const active = (kind: FindingKind): boolean => ruleOn(kind) && !suppressed?.has(kind);
@@ -376,8 +364,8 @@ export function buildFindings({
         !passedStats.unknownValueInNonTest;
 
       // Every provided value is exactly the destructuring default: the
-      // attribute is redundant at each callsite. Wins over default-never-used
-      // and same-literal, which describe the same evidence less actionably.
+      // attribute is redundant at each callsite. Wins over same-literal,
+      // which describes the same evidence less actionably.
       const defaultKey = usage.defaulted.get(prop.name);
       const equalsDefault =
         literalSites &&
@@ -396,19 +384,8 @@ export function buildFindings({
         });
       }
 
-      if (
-        !equalsDefault &&
-        active('default-never-used') &&
-        usage.defaulted.has(prop.name) &&
-        passedStats &&
-        component.renderSitesNonTest >= minSites &&
-        passedStats.nonTestSites.size === component.renderSitesNonTest &&
-        !passedStats.possiblyUndefinedInNonTest
-      ) {
-        push({ ...base, kind: 'default-never-used', nonTestRenderSites: component.renderSitesNonTest });
-      }
-
-      // Booleans are excluded: the one-sided boolean rules already cover them.
+      // Booleans are excluded: a bare attribute makes one-sided usage the
+      // JSX idiom, so "always passed true" is rarely actionable.
       if (
         !equalsDefault &&
         active('same-literal') &&
@@ -505,19 +482,6 @@ export function buildFindings({
           kind: 'always',
           nonTestRenderSites: component.renderSitesNonTest,
         });
-      }
-
-      if (
-        prop.isBoolean &&
-        passedStats.nonTestSites.size >= minSites &&
-        !passedStats.unknownValueInNonTest
-      ) {
-        if (active('boolean-never-false') && passedStats.trueCount > 0 && passedStats.falseCount === 0) {
-          push({ ...base, kind: 'boolean-never-false' });
-        }
-        if (active('boolean-never-true') && passedStats.falseCount > 0 && passedStats.trueCount === 0) {
-          push({ ...base, kind: 'boolean-never-true' });
-        }
       }
     }
   }

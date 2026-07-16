@@ -24,7 +24,7 @@ export interface AnalyzeOptions {
   includeTestComponents?: boolean;
   /** Only run these rules; defaults to all. */
   rules?: FindingKind[];
-  /** Minimum non-test site count before statistical rules (always, boolean one-sided, union variants) fire. */
+  /** Minimum non-test site count before statistical rules (always, union variants, same-literal) fire. */
   minSites?: number;
   /** Skip public-API detection: treat every component as having no consumers outside this program. */
   assumeInternal?: boolean;
@@ -105,11 +105,10 @@ export function analyzeProject(
   const { components, componentsByDecl, componentNames } = collectComponents({
     program,
     isProjectFile,
-    ts,
   });
 
   if (!assumeInternal) {
-    markPublicComponents({ configDirs, program, checker, componentsByDecl, ts });
+    markPublicComponents({ configDirs, program, checker, componentsByDecl });
   }
 
   collectUsages({
@@ -119,7 +118,6 @@ export function analyzeProject(
     componentNames,
     isProjectFile,
     isTestFile,
-    ts,
   });
 
   const { findings, skipped } = buildFindings({
@@ -130,7 +128,6 @@ export function analyzeProject(
     includeTestComponents,
     enabledRules: rules,
     minSites,
-    ts,
   });
 
   return { findings, skipped, componentsAnalyzed: components.length };

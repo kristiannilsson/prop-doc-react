@@ -81,7 +81,7 @@ test('ignores components with no JSX render sites', () => {
 test('assigns severity by rule family', () => {
   assert.equal(findingsFor('Dead')[0].severity, 'definite');
   assert.equal(findingsFor('TestsOnly')[0].severity, 'definite');
-  for (const component of ['AlwaysOptional', 'BoolOneSided', 'UnionMode']) {
+  for (const component of ['AlwaysOptional', 'DefaultDead', 'UnionMode']) {
     const [finding] = findingsFor(component);
     assert.equal(finding.severity, 'advisory', `${component} should be advisory`);
   }
@@ -89,7 +89,6 @@ test('assigns severity by rule family', () => {
 
 test('statistical rules fire at the default threshold (fixture has 3 qualifying sites each)', () => {
   assert.ok(result.findings.some((f) => f.kind === 'always'));
-  assert.ok(result.findings.some((f) => f.kind === 'boolean-never-false'));
   assert.ok(result.findings.some((f) => f.kind === 'union-variant-never'));
 });
 
@@ -101,10 +100,7 @@ test('rules option limits which rules run', () => {
 
 const STATISTICAL_KINDS = [
   'always',
-  'boolean-never-true',
-  'boolean-never-false',
   'union-variant-never',
-  'default-never-used',
   'same-literal',
   'passed-equals-default',
   'type-wider-than-usage',
@@ -161,8 +157,7 @@ test('flags callsites that always pass exactly the destructuring default', () =>
   assert.ok(kinds.includes('passed-equals-default'));
   const finding = findingsFor('PassedDefault').find((f) => f.kind === 'passed-equals-default');
   assert.equal(finding.literalValue, '7');
-  // The more specific rule wins over the overlapping generic ones.
-  assert.ok(!kinds.includes('default-never-used'));
+  // The more specific rule wins over the overlapping generic one.
   assert.ok(!kinds.includes('same-literal'));
 });
 
@@ -237,10 +232,8 @@ test('type-wider-than-usage does not fire on union-typed or varied props', () =>
   assert.ok(!findingsFor('SameLiteral').some((f) => f.kind === 'type-wider-than-usage'));
 });
 
-test('same-literal leaves booleans to the one-sided boolean rules', () => {
-  const kinds = findingsFor('BoolOneSided').map((f) => f.kind);
-  assert.ok(!kinds.includes('same-literal'));
-  assert.ok(kinds.includes('boolean-never-false'));
+test('boolean props are excluded from same-literal (bare attributes are the JSX idiom)', () => {
+  assert.deepEqual(findingsFor('BoolOneSided'), []);
 });
 
 test('boolean true does not count as the string variant "true"', () => {
@@ -282,14 +275,9 @@ test('consumption rules stay silent when the props object escapes whole', () => 
   assert.deepEqual(findingsFor('OpaqueBody'), []);
 });
 
-test('flags destructuring defaults that no non-test site can exercise', () => {
-  const kinds = findingsFor('DefaultDead').map((f) => f.kind).sort();
-  assert.deepEqual(kinds, ['always', 'default-never-used']);
-});
-
-test('spares destructuring defaults when a site may pass undefined', () => {
-  const kinds = findingsFor('DefaultMaybe').map((f) => f.kind);
-  assert.ok(!kinds.includes('default-never-used'));
+test('flags an optional defaulted prop that every non-test site passes', () => {
+  const kinds = findingsFor('DefaultDead').map((f) => f.kind);
+  assert.deepEqual(kinds, ['always']);
 });
 
 test('always does not fire when a site passes a possibly-undefined value', () => {
@@ -329,12 +317,6 @@ test('flags optional props always passed by non-test render sites', () => {
   assert.ok(finding);
   assert.equal(finding.prop, 'always');
   assert.equal(finding.nonTestRenderSites, 3);
-});
-
-test('flags one-sided boolean optional props', () => {
-  const [finding] = findingsFor('BoolOneSided').filter((f) => f.kind === 'boolean-never-false');
-  assert.ok(finding);
-  assert.equal(finding.prop, 'enabled');
 });
 
 test('flags dead union variants for optional props', () => {

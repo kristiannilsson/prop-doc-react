@@ -1,11 +1,10 @@
-import type ts from 'typescript';
-import type { ComponentRecord, TsApi } from './types.mjs';
+import ts from 'typescript';
+import type { ComponentRecord } from './types.mjs';
 import { WRAPPER_NAMES } from './constants.mjs';
 
 interface CollectComponentsArgs {
   program: ts.Program;
   isProjectFile: (sf: ts.SourceFile) => boolean;
-  ts: TsApi;
 }
 
 interface CollectComponentsResult {
@@ -14,13 +13,13 @@ interface CollectComponentsResult {
   componentNames: Set<string>;
 }
 
-function unwrapWrapperCall(expr: ts.Expression, tsApi: TsApi): ts.ArrowFunction | ts.FunctionExpression | undefined {
+function unwrapWrapperCall(expr: ts.Expression): ts.ArrowFunction | ts.FunctionExpression | undefined {
   let node: ts.Expression = expr;
-  for (let depth = 0; depth < 4 && tsApi.isCallExpression(node); depth++) {
+  for (let depth = 0; depth < 4 && ts.isCallExpression(node); depth++) {
     const callee = node.expression;
-    const calleeName = tsApi.isIdentifier(callee)
+    const calleeName = ts.isIdentifier(callee)
       ? callee.text
-      : tsApi.isPropertyAccessExpression(callee) && tsApi.isIdentifier(callee.name)
+      : ts.isPropertyAccessExpression(callee) && ts.isIdentifier(callee.name)
         ? callee.name.text
         : undefined;
     if (!calleeName || !WRAPPER_NAMES.has(calleeName) || node.arguments.length === 0) {
@@ -28,7 +27,7 @@ function unwrapWrapperCall(expr: ts.Expression, tsApi: TsApi): ts.ArrowFunction 
     }
     node = node.arguments[0];
   }
-  return tsApi.isArrowFunction(node) || tsApi.isFunctionExpression(node) ? node : undefined;
+  return ts.isArrowFunction(node) || ts.isFunctionExpression(node) ? node : undefined;
 }
 
 function createComponentRecord(
@@ -49,7 +48,7 @@ function createComponentRecord(
   };
 }
 
-export function collectComponents({ program, isProjectFile, ts: tsApi }: CollectComponentsArgs): CollectComponentsResult {
+export function collectComponents({ program, isProjectFile }: CollectComponentsArgs): CollectComponentsResult {
   const componentsByDecl = new Map<ts.Declaration, ComponentRecord>();
   const components: ComponentRecord[] = [];
   const componentNames = new Set<string>();
@@ -70,21 +69,21 @@ export function collectComponents({ program, isProjectFile, ts: tsApi }: Collect
   for (const sf of program.getSourceFiles()) {
     if (!isProjectFile(sf)) continue;
     const visit = (node: ts.Node): void => {
-      if (tsApi.isFunctionDeclaration(node) && node.name && /^[A-Z]/.test(node.name.text)) {
+      if (ts.isFunctionDeclaration(node) && node.name && /^[A-Z]/.test(node.name.text)) {
         registerComponent(node.name.text, node, [node], sf);
       } else if (
-        tsApi.isVariableDeclaration(node) &&
-        tsApi.isIdentifier(node.name) &&
+        ts.isVariableDeclaration(node) &&
+        ts.isIdentifier(node.name) &&
         /^[A-Z]/.test(node.name.text) &&
         node.initializer
       ) {
         const fn =
-          tsApi.isArrowFunction(node.initializer) || tsApi.isFunctionExpression(node.initializer)
+          ts.isArrowFunction(node.initializer) || ts.isFunctionExpression(node.initializer)
             ? node.initializer
-            : unwrapWrapperCall(node.initializer, tsApi);
+            : unwrapWrapperCall(node.initializer);
         if (fn) registerComponent(node.name.text, fn, [node], sf);
       }
-      tsApi.forEachChild(node, visit);
+      ts.forEachChild(node, visit);
     };
     visit(sf);
   }

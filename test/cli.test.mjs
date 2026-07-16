@@ -34,7 +34,6 @@ test('human output groups findings per component', () => {
   assert.match(stdout, /dead\s+\[never\]\s+never passed by any parent/);
   assert.match(stdout, /flag\s+\[tests-only\]\s+only passed from test\/story files/);
   assert.match(stdout, /always\s+\[always\]\s+passed by every non-test parent/);
-  assert.match(stdout, /enabled\s+\[bool-never-false\]\s+boolean is only ever passed true when provided/);
   assert.match(stdout, /mode\s+\[union-variant-never\]\s+union variant\(s\) never passed: auto/);
   assert.match(stdout, /<Indirect>.*\[low confidence/);
   assert.match(stdout, /definite\)\./);

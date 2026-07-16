@@ -1,5 +1,5 @@
-import type ts from 'typescript';
-import type { BodyUsage, ComponentRecord, TextSpan, TsApi } from './types.mjs';
+import ts from 'typescript';
+import type { BodyUsage, ComponentRecord, TextSpan } from './types.mjs';
 import { literalKey } from './constants.mjs';
 
 function opaqueUsage(): BodyUsage {
@@ -33,18 +33,18 @@ function bindingElementDeletionSpan(
 }
 
 /** Type-tagged literal key of a default expression, or undefined when it isn't a literal. */
-function literalKeyOfExpression(expr: ts.Expression, tsApi: TsApi): string | undefined {
-  if (expr.kind === tsApi.SyntaxKind.TrueKeyword) return literalKey(true);
-  if (expr.kind === tsApi.SyntaxKind.FalseKeyword) return literalKey(false);
-  if (tsApi.isStringLiteral(expr) || tsApi.isNoSubstitutionTemplateLiteral(expr)) return literalKey(expr.text);
-  if (tsApi.isNumericLiteral(expr)) return literalKey(Number(expr.text));
+function literalKeyOfExpression(expr: ts.Expression): string | undefined {
+  if (expr.kind === ts.SyntaxKind.TrueKeyword) return literalKey(true);
+  if (expr.kind === ts.SyntaxKind.FalseKeyword) return literalKey(false);
+  if (ts.isStringLiteral(expr) || ts.isNoSubstitutionTemplateLiteral(expr)) return literalKey(expr.text);
+  if (ts.isNumericLiteral(expr)) return literalKey(Number(expr.text));
   if (
-    tsApi.isPrefixUnaryExpression(expr) &&
-    (expr.operator === tsApi.SyntaxKind.MinusToken || expr.operator === tsApi.SyntaxKind.PlusToken) &&
-    tsApi.isNumericLiteral(expr.operand)
+    ts.isPrefixUnaryExpression(expr) &&
+    (expr.operator === ts.SyntaxKind.MinusToken || expr.operator === ts.SyntaxKind.PlusToken) &&
+    ts.isNumericLiteral(expr.operand)
   ) {
     const n = Number(expr.operand.text);
-    return literalKey(expr.operator === tsApi.SyntaxKind.MinusToken ? -n : n);
+    return literalKey(expr.operator === ts.SyntaxKind.MinusToken ? -n : n);
   }
   return undefined;
 }
@@ -54,46 +54,44 @@ export function isConsumed(usage: BodyUsage, propName: string): boolean {
   return usage.restRemainders.some((named) => !named.has(propName));
 }
 
-function inTypeContext(node: ts.Node, stopAt: ts.Node, tsApi: TsApi): boolean {
+function inTypeContext(node: ts.Node, stopAt: ts.Node): boolean {
   for (let n = node.parent; n && n !== stopAt; n = n.parent) {
-    if (tsApi.isTypeNode(n)) return true;
+    if (ts.isTypeNode(n)) return true;
   }
   return false;
 }
 
 /** Identifier positions that are names/labels, not value references. */
-function isNamePosition(id: ts.Identifier, tsApi: TsApi): boolean {
+function isNamePosition(id: ts.Identifier): boolean {
   const parent = id.parent;
   return (
-    (tsApi.isPropertyAccessExpression(parent) && parent.name === id) ||
-    (tsApi.isPropertyAssignment(parent) && parent.name === id) ||
-    (tsApi.isBindingElement(parent) && parent.propertyName === id) ||
-    (tsApi.isJsxAttribute(parent) && parent.name === id) ||
-    tsApi.isQualifiedName(parent)
+    (ts.isPropertyAccessExpression(parent) && parent.name === id) ||
+    (ts.isPropertyAssignment(parent) && parent.name === id) ||
+    (ts.isBindingElement(parent) && parent.propertyName === id) ||
+    (ts.isJsxAttribute(parent) && parent.name === id) ||
+    ts.isQualifiedName(parent)
   );
 }
 
 function collectValueIdentifiers(
-  fnNode: ts.FunctionLikeDeclaration,
-  tsApi: TsApi,
-): Map<string, ts.Identifier[]> {
+  fnNode: ts.FunctionLikeDeclaration,): Map<string, ts.Identifier[]> {
   const byText = new Map<string, ts.Identifier[]>();
   const visit = (node: ts.Node): void => {
-    if (tsApi.isIdentifier(node) && !isNamePosition(node, tsApi) && !inTypeContext(node, fnNode, tsApi)) {
+    if (ts.isIdentifier(node) && !isNamePosition(node) && !inTypeContext(node, fnNode)) {
       const list = byText.get(node.text);
       if (list) list.push(node);
       else byText.set(node.text, [node]);
     }
-    tsApi.forEachChild(node, visit);
+    ts.forEachChild(node, visit);
   };
   visit(fnNode);
   return byText;
 }
 
-function symbolAt(id: ts.Identifier, checker: ts.TypeChecker, tsApi: TsApi): ts.Symbol | undefined {
+function symbolAt(id: ts.Identifier, checker: ts.TypeChecker): ts.Symbol | undefined {
   // A shorthand property (`{ foo }` in an object literal) resolves to the
   // property symbol; the value side is what references the binding.
-  if (tsApi.isShorthandPropertyAssignment(id.parent) && id.parent.name === id) {
+  if (ts.isShorthandPropertyAssignment(id.parent) && id.parent.name === id) {
     return checker.getShorthandAssignmentValueSymbol(id.parent);
   }
   return checker.getSymbolAtLocation(id);
@@ -102,14 +100,12 @@ function symbolAt(id: ts.Identifier, checker: ts.TypeChecker, tsApi: TsApi): ts.
 function isBindingReferenced(
   nameNode: ts.Identifier,
   identifiers: Map<string, ts.Identifier[]>,
-  checker: ts.TypeChecker,
-  tsApi: TsApi,
-): boolean {
+  checker: ts.TypeChecker,): boolean {
   const symbol = checker.getSymbolAtLocation(nameNode);
   if (!symbol) return true; // unresolvable -> assume referenced rather than flag
   for (const id of identifiers.get(nameNode.text) ?? []) {
     if (id === nameNode) continue;
-    if (symbolAt(id, checker, tsApi) === symbol) return true;
+    if (symbolAt(id, checker) === symbol) return true;
   }
   return false;
 }
@@ -118,14 +114,13 @@ interface PatternContext {
   usage: BodyUsage;
   identifiers: Map<string, ts.Identifier[]>;
   checker: ts.TypeChecker;
-  tsApi: TsApi;
 }
 
 function recordBindingElement(
   pattern: ts.ObjectBindingPattern,
   index: number,
   propName: string,
-  { usage, identifiers, checker, tsApi }: PatternContext,
+  { usage, identifiers, checker }: PatternContext,
 ): void {
   const element = pattern.elements[index];
   const sf = element.getSourceFile();
@@ -136,13 +131,13 @@ function recordBindingElement(
       : bindingElementDeletionSpan(pattern, index, sf),
   );
   if (element.initializer) {
-    usage.defaulted.set(propName, literalKeyOfExpression(element.initializer, tsApi));
+    usage.defaulted.set(propName, literalKeyOfExpression(element.initializer));
     usage.defaultTargets.set(propName, {
       file: sf.fileName,
       start: element.initializer.getStart(sf),
       end: element.initializer.getEnd(),
     });
-  } else if (tsApi.isIdentifier(element.name)) {
+  } else if (ts.isIdentifier(element.name)) {
     // No default yet: a zero-length span marks where one can be inserted.
     usage.defaultTargets.set(propName, {
       file: sf.fileName,
@@ -153,25 +148,25 @@ function recordBindingElement(
   // Nested destructuring always reads into the prop; a plain binding only
   // counts as consumed when something references it.
   if (
-    !tsApi.isIdentifier(element.name) ||
-    isBindingReferenced(element.name, identifiers, checker, tsApi)
+    !ts.isIdentifier(element.name) ||
+    isBindingReferenced(element.name, identifiers, checker)
   ) {
     usage.consumed.add(propName);
   }
 }
 
 function processBindingPattern(pattern: ts.ObjectBindingPattern, ctx: PatternContext): void {
-  const { usage, identifiers, checker, tsApi } = ctx;
+  const { usage, identifiers, checker } = ctx;
   const named = new Set<string>();
   let rest: ts.Identifier | undefined;
   for (const [index, element] of pattern.elements.entries()) {
     if (element.dotDotDotToken) {
-      if (tsApi.isIdentifier(element.name)) rest = element.name;
+      if (ts.isIdentifier(element.name)) rest = element.name;
       else usage.opaque = true;
       continue;
     }
     const nameSource = element.propertyName ?? element.name;
-    if (!tsApi.isIdentifier(nameSource) && !tsApi.isStringLiteral(nameSource)) {
+    if (!ts.isIdentifier(nameSource) && !ts.isStringLiteral(nameSource)) {
       // Computed or otherwise dynamic property name: can't tell which prop.
       usage.opaque = true;
       continue;
@@ -179,7 +174,7 @@ function processBindingPattern(pattern: ts.ObjectBindingPattern, ctx: PatternCon
     named.add(nameSource.text);
     recordBindingElement(pattern, index, nameSource.text, ctx);
   }
-  if (rest && isBindingReferenced(rest, identifiers, checker, tsApi)) {
+  if (rest && isBindingReferenced(rest, identifiers, checker)) {
     usage.restRemainders.push(named);
   }
 }
@@ -191,9 +186,7 @@ function processBindingPattern(pattern: ts.ObjectBindingPattern, ctx: PatternCon
  */
 export function analyzeBodyUsage(
   component: ComponentRecord,
-  checker: ts.TypeChecker,
-  tsApi: TsApi,
-): BodyUsage {
+  checker: ts.TypeChecker,): BodyUsage {
   const fnNode = component.fnNode;
   const param = fnNode.parameters[0];
   if (!param || !fnNode.body) return opaqueUsage();
@@ -206,34 +199,34 @@ export function analyzeBodyUsage(
     defaultTargets: new Map(),
     bindingElementSpans: new Map(),
   };
-  const identifiers = collectValueIdentifiers(fnNode, tsApi);
-  const ctx: PatternContext = { usage, identifiers, checker, tsApi };
+  const identifiers = collectValueIdentifiers(fnNode);
+  const ctx: PatternContext = { usage, identifiers, checker };
 
-  if (tsApi.isObjectBindingPattern(param.name)) {
+  if (ts.isObjectBindingPattern(param.name)) {
     processBindingPattern(param.name, ctx);
     return usage.opaque ? opaqueUsage() : usage;
   }
-  if (!tsApi.isIdentifier(param.name)) return opaqueUsage();
+  if (!ts.isIdentifier(param.name)) return opaqueUsage();
 
   const paramSymbol = checker.getSymbolAtLocation(param.name);
   if (!paramSymbol) return opaqueUsage();
 
   for (const id of identifiers.get(param.name.text) ?? []) {
     if (id === param.name) continue;
-    if (symbolAt(id, checker, tsApi) !== paramSymbol) continue;
+    if (symbolAt(id, checker) !== paramSymbol) continue;
     const parent = id.parent;
-    if (tsApi.isPropertyAccessExpression(parent) && parent.expression === id) {
+    if (ts.isPropertyAccessExpression(parent) && parent.expression === id) {
       usage.consumed.add(parent.name.text);
     } else if (
-      tsApi.isElementAccessExpression(parent) &&
+      ts.isElementAccessExpression(parent) &&
       parent.expression === id &&
-      tsApi.isStringLiteral(parent.argumentExpression)
+      ts.isStringLiteral(parent.argumentExpression)
     ) {
       usage.consumed.add(parent.argumentExpression.text);
     } else if (
-      tsApi.isVariableDeclaration(parent) &&
+      ts.isVariableDeclaration(parent) &&
       parent.initializer === id &&
-      tsApi.isObjectBindingPattern(parent.name)
+      ts.isObjectBindingPattern(parent.name)
     ) {
       processBindingPattern(parent.name, ctx);
     } else {

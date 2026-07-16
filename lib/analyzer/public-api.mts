@@ -1,14 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type ts from 'typescript';
-import type { ComponentRecord, TsApi } from './types.mjs';
+import ts from 'typescript';
+import type { ComponentRecord } from './types.mjs';
 
 interface MarkPublicComponentsArgs {
   configDirs: string[];
   program: ts.Program;
   checker: ts.TypeChecker;
   componentsByDecl: Map<ts.Declaration, ComponentRecord>;
-  ts: TsApi;
 }
 
 /** Collect every string leaf of a package.json `exports` value. */
@@ -40,7 +39,6 @@ export function markPublicComponents({
   program,
   checker,
   componentsByDecl,
-  ts: tsApi,
 }: MarkPublicComponentsArgs): void {
   for (const dir of configDirs) {
     let pkg: { private?: boolean; [k: string]: unknown };
@@ -67,7 +65,7 @@ export function markPublicComponents({
       if (!moduleSymbol) continue;
       for (const exported of checker.getExportsOfModule(moduleSymbol)) {
         let symbol = exported;
-        if (symbol.flags & tsApi.SymbolFlags.Alias) {
+        if (symbol.flags & ts.SymbolFlags.Alias) {
           try {
             symbol = checker.getAliasedSymbol(symbol);
           } catch {

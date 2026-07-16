@@ -80,7 +80,7 @@ export function AlwaysOptional(props: AlwaysOptionalProps) {
 }
 
 interface BoolOneSidedProps {
-  enabled?: boolean; // only ever passed true (when passed) -> 'boolean-never-false' finding
+  enabled?: boolean; // boolean only ever passed true -> excluded from same-literal, no finding
 }
 export function BoolOneSided(props: BoolOneSidedProps) {
   return <div>{String(props.enabled)}</div>;
@@ -132,14 +132,14 @@ export function RestForward({ picked, ...rest }: RestForwardProps) {
 }
 
 interface DefaultDeadProps {
-  size?: number; // every non-test site passes a defined value -> 'default-never-used'
+  size?: number; // every non-test site passes a defined value -> 'always'
 }
 export function DefaultDead({ size = 10 }: DefaultDeadProps) {
   return <div>{size}</div>;
 }
 
 interface DefaultMaybeProps {
-  size?: number; // one site passes a possibly-undefined value -> default may run, no finding
+  size?: number; // one site passes a possibly-undefined value -> 'always' must not fire
 }
 export function DefaultMaybe({ size = 10 }: DefaultMaybeProps) {
   return <div>{size}</div>;

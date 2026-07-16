@@ -1,5 +1,5 @@
-import type ts from 'typescript';
-import type { ComponentRecord, LiteralValue, PassStats, TextSpan, TsApi } from './types.mjs';
+import ts from 'typescript';
+import type { ComponentRecord, LiteralValue, PassStats, TextSpan } from './types.mjs';
 import { literalKey } from './constants.mjs';
 
 interface CollectUsagesArgs {
@@ -9,7 +9,6 @@ interface CollectUsagesArgs {
   componentNames: Set<string>;
   isProjectFile: (sf: ts.SourceFile) => boolean;
   isTestFile: (fileName: string) => boolean;
-  ts: TsApi;
 }
 
 interface RecordPassedOptions {
@@ -25,62 +24,62 @@ interface RecordPassedOptions {
   attrDeletable?: boolean;
 }
 
-function isJsxTagContext(identifier: ts.Identifier, tsApi: TsApi): boolean {
+function isJsxTagContext(identifier: ts.Identifier): boolean {
   const parent = identifier.parent;
   if (
-    tsApi.isJsxOpeningElement(parent) ||
-    tsApi.isJsxSelfClosingElement(parent) ||
-    tsApi.isJsxClosingElement(parent)
+    ts.isJsxOpeningElement(parent) ||
+    ts.isJsxSelfClosingElement(parent) ||
+    ts.isJsxClosingElement(parent)
   ) {
     return true;
   }
-  if (tsApi.isPropertyAccessExpression(parent)) {
+  if (ts.isPropertyAccessExpression(parent)) {
     const grand = parent.parent;
     return (
-      tsApi.isJsxOpeningElement(grand) ||
-      tsApi.isJsxSelfClosingElement(grand) ||
-      tsApi.isJsxClosingElement(grand)
+      ts.isJsxOpeningElement(grand) ||
+      ts.isJsxSelfClosingElement(grand) ||
+      ts.isJsxClosingElement(grand)
     );
   }
   return false;
 }
 
-function isDeclarationContext(identifier: ts.Identifier, tsApi: TsApi): boolean {
+function isDeclarationContext(identifier: ts.Identifier): boolean {
   const parent = identifier.parent;
   return (
-    ((tsApi.isVariableDeclaration(parent) || tsApi.isFunctionDeclaration(parent)) &&
+    ((ts.isVariableDeclaration(parent) || ts.isFunctionDeclaration(parent)) &&
       parent.name === identifier) ||
-    tsApi.isImportSpecifier(parent) ||
-    tsApi.isExportSpecifier(parent) ||
-    tsApi.isImportClause(parent) ||
-    tsApi.isNamespaceImport(parent) ||
-    tsApi.isExportAssignment(parent)
+    ts.isImportSpecifier(parent) ||
+    ts.isExportSpecifier(parent) ||
+    ts.isImportClause(parent) ||
+    ts.isNamespaceImport(parent) ||
+    ts.isExportAssignment(parent)
   );
 }
 
-function hasMeaningfulChildren(jsxElement: ts.JsxElement, tsApi: TsApi): boolean {
+function hasMeaningfulChildren(jsxElement: ts.JsxElement): boolean {
   return jsxElement.children.some(
-    (child) => !tsApi.isJsxText(child) || child.text.trim().length > 0,
+    (child) => !ts.isJsxText(child) || child.text.trim().length > 0,
   );
 }
 
-function literalFromAttribute(attr: ts.JsxAttribute, tsApi: TsApi): LiteralValue | undefined {
+function literalFromAttribute(attr: ts.JsxAttribute): LiteralValue | undefined {
   if (!attr.initializer) return true;
-  if (tsApi.isStringLiteral(attr.initializer)) return attr.initializer.text;
-  if (!tsApi.isJsxExpression(attr.initializer)) return undefined;
+  if (ts.isStringLiteral(attr.initializer)) return attr.initializer.text;
+  if (!ts.isJsxExpression(attr.initializer)) return undefined;
   const expr = attr.initializer.expression;
   if (!expr) return undefined;
-  if (expr.kind === tsApi.SyntaxKind.TrueKeyword) return true;
-  if (expr.kind === tsApi.SyntaxKind.FalseKeyword) return false;
-  if (tsApi.isStringLiteral(expr) || tsApi.isNoSubstitutionTemplateLiteral(expr)) return expr.text;
-  if (tsApi.isNumericLiteral(expr)) return Number(expr.text);
+  if (expr.kind === ts.SyntaxKind.TrueKeyword) return true;
+  if (expr.kind === ts.SyntaxKind.FalseKeyword) return false;
+  if (ts.isStringLiteral(expr) || ts.isNoSubstitutionTemplateLiteral(expr)) return expr.text;
+  if (ts.isNumericLiteral(expr)) return Number(expr.text);
   if (
-    tsApi.isPrefixUnaryExpression(expr) &&
-    (expr.operator === tsApi.SyntaxKind.MinusToken || expr.operator === tsApi.SyntaxKind.PlusToken) &&
-    tsApi.isNumericLiteral(expr.operand)
+    ts.isPrefixUnaryExpression(expr) &&
+    (expr.operator === ts.SyntaxKind.MinusToken || expr.operator === ts.SyntaxKind.PlusToken) &&
+    ts.isNumericLiteral(expr.operand)
   ) {
     const n = Number(expr.operand.text);
-    return expr.operator === tsApi.SyntaxKind.MinusToken ? -n : n;
+    return expr.operator === ts.SyntaxKind.MinusToken ? -n : n;
   }
   return undefined;
 }
@@ -95,17 +94,17 @@ function attributeDeletionSpan(attr: ts.JsxAttribute, sf: ts.SourceFile): TextSp
 
 // Whether deleting the attribute cannot change behavior: evaluating its
 // initializer has no side effects. Literals are handled by the caller.
-function isSideEffectFreeInitializer(attr: ts.JsxAttribute, tsApi: TsApi): boolean {
+function isSideEffectFreeInitializer(attr: ts.JsxAttribute): boolean {
   if (!attr.initializer) return true; // bare attribute
-  if (tsApi.isStringLiteral(attr.initializer)) return true;
-  if (!tsApi.isJsxExpression(attr.initializer) || !attr.initializer.expression) return false;
+  if (ts.isStringLiteral(attr.initializer)) return true;
+  if (!ts.isJsxExpression(attr.initializer) || !attr.initializer.expression) return false;
   const expr = attr.initializer.expression;
-  return tsApi.isArrowFunction(expr) || tsApi.isFunctionExpression(expr) || tsApi.isIdentifier(expr);
+  return ts.isArrowFunction(expr) || ts.isFunctionExpression(expr) || ts.isIdentifier(expr);
 }
 
-function typeAdmitsUndefined(type: ts.Type, tsApi: TsApi): boolean {
+function typeAdmitsUndefined(type: ts.Type): boolean {
   const loose =
-    tsApi.TypeFlags.Undefined | tsApi.TypeFlags.Void | tsApi.TypeFlags.Any | tsApi.TypeFlags.Unknown;
+    ts.TypeFlags.Undefined | ts.TypeFlags.Void | ts.TypeFlags.Any | ts.TypeFlags.Unknown;
   if (type.flags & loose) return true;
   return type.isUnion() && type.types.some((t) => (t.flags & loose) !== 0);
 }
@@ -113,12 +112,10 @@ function typeAdmitsUndefined(type: ts.Type, tsApi: TsApi): boolean {
 function resolveToComponent(
   symbol: ts.Symbol | undefined,
   checker: ts.TypeChecker,
-  componentsByDecl: Map<ts.Declaration, ComponentRecord>,
-  tsApi: TsApi,
-): ComponentRecord | undefined {
+  componentsByDecl: Map<ts.Declaration, ComponentRecord>,): ComponentRecord | undefined {
   if (!symbol) return undefined;
   let s = symbol;
-  if (s.flags & tsApi.SymbolFlags.Alias) {
+  if (s.flags & ts.SymbolFlags.Alias) {
     try {
       s = checker.getAliasedSymbol(s);
     } catch {
@@ -132,8 +129,8 @@ function resolveToComponent(
   return undefined;
 }
 
-function isOpaqueType(type: ts.Type, checker: ts.TypeChecker, tsApi: TsApi): boolean {
-  if (type.flags & (tsApi.TypeFlags.Any | tsApi.TypeFlags.Unknown)) return true;
+function isOpaqueType(type: ts.Type, checker: ts.TypeChecker): boolean {
+  if (type.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown)) return true;
   return checker.getIndexInfosOfType(type).length > 0;
 }
 
@@ -143,8 +140,6 @@ function getOrCreatePassStats(component: ComponentRecord, propName: string): Pas
   const created: PassStats = {
     files: new Set(),
     nonTestSites: new Set(),
-    trueCount: 0,
-    falseCount: 0,
     literalValues: new Set(),
     unknownValueInNonTest: false,
     possiblyUndefinedInNonTest: false,
@@ -199,8 +194,6 @@ function recordPassed(
     return;
   }
 
-  if (options.literal === true) stats.trueCount += 1;
-  if (options.literal === false) stats.falseCount += 1;
   stats.literalValues.add(literalKey(options.literal));
 }
 
@@ -211,7 +204,6 @@ export function collectUsages({
   componentNames,
   isProjectFile,
   isTestFile,
-  ts: tsApi,
 }: CollectUsagesArgs): void {
   function recordAttribute(
     component: ComponentRecord,
@@ -220,18 +212,15 @@ export function collectUsages({
     inTestFile: boolean,
     siteId: string,
   ): void {
-    const literal = literalFromAttribute(attr, tsApi);
+    const literal = literalFromAttribute(attr);
     let possiblyUndefined: boolean | undefined;
     if (
       literal === undefined &&
       attr.initializer &&
-      tsApi.isJsxExpression(attr.initializer) &&
+      ts.isJsxExpression(attr.initializer) &&
       attr.initializer.expression
     ) {
-      possiblyUndefined = typeAdmitsUndefined(
-        checker.getTypeAtLocation(attr.initializer.expression),
-        tsApi,
-      );
+      possiblyUndefined = typeAdmitsUndefined(checker.getTypeAtLocation(attr.initializer.expression));
     }
     recordPassed(component, attr.name.getText(sf), sf.fileName, {
       isTestFile: inTestFile,
@@ -239,7 +228,7 @@ export function collectUsages({
       literal,
       possiblyUndefined,
       attrSpan: attributeDeletionSpan(attr, sf),
-      attrDeletable: literal !== undefined || isSideEffectFreeInitializer(attr, tsApi),
+      attrDeletable: literal !== undefined || isSideEffectFreeInitializer(attr),
     });
   }
 
@@ -253,7 +242,7 @@ export function collectUsages({
     const spreadType = checker.getTypeAtLocation(attr.expression);
     const members = spreadType.isUnion() ? spreadType.types : [spreadType];
     for (const member of members) {
-      if (isOpaqueType(member, checker, tsApi)) {
+      if (isOpaqueType(member, checker)) {
         component.opaqueSpreadFiles.add(sf.fileName);
       } else {
         for (const prop of member.getProperties()) {
@@ -278,7 +267,6 @@ export function collectUsages({
       checker.getSymbolAtLocation(tagName),
       checker,
       componentsByDecl,
-      tsApi,
     );
     if (!component) return;
 
@@ -287,8 +275,8 @@ export function collectUsages({
     if (!inTestFile) component.renderSitesNonTest += 1;
 
     for (const attr of attributes.properties) {
-      if (tsApi.isJsxAttribute(attr)) recordAttribute(component, attr, sf, inTestFile, siteId);
-      else if (tsApi.isJsxSpreadAttribute(attr)) recordSpreadAttribute(component, attr, sf, inTestFile, siteId);
+      if (ts.isJsxAttribute(attr)) recordAttribute(component, attr, sf, inTestFile, siteId);
+      else if (ts.isJsxSpreadAttribute(attr)) recordSpreadAttribute(component, attr, sf, inTestFile, siteId);
     }
 
     if (childrenPassed) {
@@ -305,33 +293,32 @@ export function collectUsages({
 
     let siteCounter = 0;
     const visit = (node: ts.Node): void => {
-      if (tsApi.isJsxSelfClosingElement(node)) {
+      if (ts.isJsxSelfClosingElement(node)) {
         siteCounter += 1;
         recordRenderSite(node.tagName, node.attributes, false, sf, `${sf.fileName}:${siteCounter}`);
-      } else if (tsApi.isJsxElement(node)) {
+      } else if (ts.isJsxElement(node)) {
         siteCounter += 1;
         recordRenderSite(
           node.openingElement.tagName,
           node.openingElement.attributes,
-          hasMeaningfulChildren(node, tsApi),
+          hasMeaningfulChildren(node),
           sf,
           `${sf.fileName}:${siteCounter}`,
         );
       } else if (
-        tsApi.isIdentifier(node) &&
+        ts.isIdentifier(node) &&
         componentNames.has(node.text) &&
-        !isJsxTagContext(node, tsApi) &&
-        !isDeclarationContext(node, tsApi)
+        !isJsxTagContext(node) &&
+        !isDeclarationContext(node)
       ) {
         const component = resolveToComponent(
           checker.getSymbolAtLocation(node),
           checker,
           componentsByDecl,
-          tsApi,
         );
         if (component) component.indirectRefFiles.add(sf.fileName);
       }
-      tsApi.forEachChild(node, visit);
+      ts.forEachChild(node, visit);
     };
     visit(sf);
   }

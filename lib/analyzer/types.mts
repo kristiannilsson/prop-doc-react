@@ -1,17 +1,12 @@
 import type ts from 'typescript';
 
-export type TsApi = typeof import('typescript');
-
 export type FindingKind =
   | 'never'
   | 'tests-only'
   | 'always'
-  | 'boolean-never-true'
-  | 'boolean-never-false'
   | 'union-variant-never'
   | 'unconsumed'
   | 'callback-never-invoked'
-  | 'default-never-used'
   | 'same-literal'
   | 'passed-equals-default'
   | 'type-wider-than-usage';
@@ -38,8 +33,6 @@ export interface FixEdit extends TextSpan {
 export interface PassStats {
   files: Set<string>;
   nonTestSites: Set<string>;
-  trueCount: number;
-  falseCount: number;
   literalValues: Set<string>;
   unknownValueInNonTest: boolean;
   /** Some non-test site may pass `undefined` (per the value's type), so a destructuring default could still be exercised. */

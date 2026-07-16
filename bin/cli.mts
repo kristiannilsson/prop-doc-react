@@ -2,6 +2,7 @@
 
 import path from 'node:path';
 import process from 'node:process';
+import { parseArgs } from 'node:util';
 import { ALL_FINDING_KINDS, DEFAULT_MIN_SITES, analyzeProject } from '../lib/analyze.mjs';
 import { BaselineError, DEFAULT_BASELINE_PATH, loadBaseline, writeBaseline } from '../lib/baseline.mjs';
 import { applyFixes, planFixes } from '../lib/fixer.mjs';
@@ -11,8 +12,8 @@ import type { AnalyzeResult, Finding, FindingKind } from '../lib/analyzer/types.
 const HELP = `Usage: prop-doc [tsconfig paths...] [options]
 
 Finds React prop-API drift: dead optional props, props the component body
-never reads, never-invoked callbacks, one-sided booleans, dead union
-variants, and dead destructuring defaults.
+never reads, never-invoked callbacks, dead union variants, and callsites
+that restate the destructuring default.
 
 Arguments:
   tsconfig paths             one or more tsconfig.json paths, merged into one
@@ -27,7 +28,7 @@ Options:
   --rules <list>             comma-separated rules to run (default: all)
                              ${ALL_FINDING_KINDS.join(', ')}
   --min-sites <n>            non-test sites required before statistical rules
-                             (always, boolean one-sided, union variants) fire
+                             (always, union variants, same-literal) fire
                              (default: ${DEFAULT_MIN_SITES})
   --baseline <path>          ignore findings recorded in this baseline file;
                              only new findings are reported and gate the exit
@@ -72,49 +73,35 @@ function subdued(text: string): string {
   return color(90, text);
 }
 
-function kindTag(kind: Finding['kind']): string {
-  if (kind === 'never') return color(31, '[never]');
-  if (kind === 'tests-only') return color(35, '[tests-only]');
-  if (kind === 'unconsumed') return color(31, '[unconsumed]');
-  if (kind === 'callback-never-invoked') return color(31, '[callback-never-invoked]');
-  if (kind === 'default-never-used') return color(33, '[default-never-used]');
-  if (kind === 'always') return color(33, '[always]');
-  if (kind === 'same-literal') return color(33, '[same-literal]');
-  if (kind === 'passed-equals-default') return color(33, '[passed-equals-default]');
-  if (kind === 'type-wider-than-usage') return color(34, '[type-wider-than-usage]');
-  if (kind === 'boolean-never-true') return color(34, '[bool-never-true]');
-  if (kind === 'boolean-never-false') return color(34, '[bool-never-false]');
-  if (kind === 'union-variant-never') return color(34, '[union-variant-never]');
-  return `[${kind}]`;
+const KIND_COLORS: Record<FindingKind, number> = {
+  never: 31,
+  unconsumed: 31,
+  'callback-never-invoked': 31,
+  'tests-only': 35,
+  always: 33,
+  'same-literal': 33,
+  'passed-equals-default': 33,
+  'type-wider-than-usage': 34,
+  'union-variant-never': 34,
+};
+
+function kindTag(kind: FindingKind): string {
+  return color(KIND_COLORS[kind], `[${kind}]`);
 }
 
-function findingStatus(f: Finding): string {
-  if (f.kind === 'never') return 'never passed by any parent';
-  if (f.kind === 'tests-only') return 'only passed from test/story files';
-  if (f.kind === 'unconsumed') return 'accepted but never read or forwarded by the component body';
-  if (f.kind === 'callback-never-invoked') return 'callback passed by parents but never referenced by the component';
-  if (f.kind === 'default-never-used') {
-    return `destructuring default never exercised (all ${f.nonTestRenderSites} non-test render site(s) pass a defined value)`;
-  }
-  if (f.kind === 'always') {
-    return `passed by every non-test parent (${f.nonTestRenderSites} non-test render site(s))`;
-  }
-  if (f.kind === 'same-literal') {
-    return `always passed the same value when provided: ${f.literalValue}`;
-  }
-  if (f.kind === 'passed-equals-default') {
-    return `every provided value equals the destructuring default (${f.literalValue}); the attribute is redundant`;
-  }
-  if (f.kind === 'type-wider-than-usage') {
-    return `type is wider than usage; only ever passed: ${f.observedValues?.join(', ') ?? ''} — consider a union type`;
-  }
-  if (f.kind === 'boolean-never-true') return 'boolean is only ever passed false when provided';
-  if (f.kind === 'boolean-never-false') return 'boolean is only ever passed true when provided';
-  if (f.kind === 'union-variant-never') {
-    return `union variant(s) never passed: ${f.missingVariants?.join(', ') ?? ''}`;
-  }
-  return f.kind;
-}
+const KIND_STATUS: Record<FindingKind, (f: Finding) => string> = {
+  never: () => 'never passed by any parent',
+  'tests-only': () => 'only passed from test/story files',
+  unconsumed: () => 'accepted but never read or forwarded by the component body',
+  'callback-never-invoked': () => 'callback passed by parents but never referenced by the component',
+  always: (f) => `passed by every non-test parent (${f.nonTestRenderSites} non-test render site(s))`,
+  'same-literal': (f) => `always passed the same value when provided: ${f.literalValue}`,
+  'passed-equals-default': (f) =>
+    `every provided value equals the destructuring default (${f.literalValue}); the attribute is redundant`,
+  'type-wider-than-usage': (f) =>
+    `type is wider than usage; only ever passed: ${f.observedValues?.join(', ') ?? ''} — consider a union type`,
+  'union-variant-never': (f) => `union variant(s) never passed: ${f.missingVariants?.join(', ') ?? ''}`,
+};
 
 const args = process.argv.slice(2);
 if (args.includes('--help') || args.includes('-h')) {
@@ -127,58 +114,69 @@ function usageError(message: string): never {
   process.exit(2);
 }
 
-let asJson = false;
-let verbose = false;
-let includeTestComponents = false;
+let values: {
+  json?: boolean;
+  verbose?: boolean;
+  'include-test-components'?: boolean;
+  rules?: string;
+  'min-sites'?: string;
+  baseline?: string;
+  'write-baseline'?: boolean;
+  'assume-internal'?: boolean;
+  fix?: boolean;
+  'dry-run'?: boolean;
+};
+let positionals: string[];
+try {
+  ({ values, positionals } = parseArgs({
+    args,
+    options: {
+      json: { type: 'boolean' },
+      verbose: { type: 'boolean' },
+      'include-test-components': { type: 'boolean' },
+      rules: { type: 'string' },
+      'min-sites': { type: 'string' },
+      baseline: { type: 'string' },
+      'write-baseline': { type: 'boolean' },
+      'assume-internal': { type: 'boolean' },
+      fix: { type: 'boolean' },
+      'dry-run': { type: 'boolean' },
+    },
+    allowPositionals: true,
+  }));
+} catch (error) {
+  usageError(error instanceof Error ? error.message : String(error));
+}
+
+const asJson = values.json ?? false;
+const verbose = values.verbose ?? false;
+const includeTestComponents = values['include-test-components'] ?? false;
+const writeBaselineMode = values['write-baseline'] ?? false;
+const assumeInternal = values['assume-internal'] ?? false;
+const fixMode = values.fix ?? false;
+const dryRun = values['dry-run'] ?? false;
+const baselinePath = values.baseline;
+
 let rules: FindingKind[] | undefined;
+if (values.rules !== undefined) {
+  const names = values.rules.split(',').map((r) => r.trim()).filter(Boolean);
+  const bad = names.filter((r) => !(ALL_FINDING_KINDS as string[]).includes(r));
+  if (bad.length > 0) usageError(`Unknown rule(s): ${bad.join(', ')}`);
+  if (names.length === 0) usageError('--rules requires at least one rule');
+  rules = names as FindingKind[];
+}
+
 let minSites: number | undefined;
-let baselinePath: string | undefined;
-let writeBaselineMode = false;
-let assumeInternal = false;
-let fixMode = false;
-let dryRun = false;
-const positional: string[] = [];
-
-for (let i = 0; i < args.length; i++) {
-  const arg = args[i];
-  if (!arg.startsWith('--')) {
-    positional.push(arg);
-    continue;
-  }
-  const eq = arg.indexOf('=');
-  const flag = eq === -1 ? arg : arg.slice(0, eq);
-  const takeValue = (): string => {
-    if (eq !== -1) return arg.slice(eq + 1);
-    const next = args[++i];
-    if (next === undefined || next.startsWith('--')) usageError(`${flag} requires a value`);
-    return next;
-  };
-
-  if (flag === '--json') asJson = true;
-  else if (flag === '--verbose') verbose = true;
-  else if (flag === '--include-test-components') includeTestComponents = true;
-  else if (flag === '--rules') {
-    const names = takeValue().split(',').map((r) => r.trim()).filter(Boolean);
-    const bad = names.filter((r) => !(ALL_FINDING_KINDS as string[]).includes(r));
-    if (bad.length > 0) usageError(`Unknown rule(s): ${bad.join(', ')}`);
-    if (names.length === 0) usageError('--rules requires at least one rule');
-    rules = names as FindingKind[];
-  } else if (flag === '--min-sites') {
-    const n = Number(takeValue());
-    if (!Number.isInteger(n) || n < 1) usageError('--min-sites requires a positive integer');
-    minSites = n;
-  } else if (flag === '--baseline') baselinePath = takeValue();
-  else if (flag === '--write-baseline') writeBaselineMode = true;
-  else if (flag === '--assume-internal') assumeInternal = true;
-  else if (flag === '--fix') fixMode = true;
-  else if (flag === '--dry-run') dryRun = true;
-  else usageError(`Unknown option: ${arg}`);
+if (values['min-sites'] !== undefined) {
+  const n = Number(values['min-sites']);
+  if (!Number.isInteger(n) || n < 1) usageError('--min-sites requires a positive integer');
+  minSites = n;
 }
 
 if (dryRun && !fixMode) usageError('--dry-run requires --fix');
 if (fixMode && writeBaselineMode) usageError('--fix cannot be combined with --write-baseline');
 
-const tsconfigPaths = positional.length > 0 ? positional : ['tsconfig.json'];
+const tsconfigPaths = positionals.length > 0 ? positionals : ['tsconfig.json'];
 
 let result: AnalyzeResult;
 try {
@@ -251,8 +249,7 @@ function printFindingSection(title: string, sectionFindings: Finding[]): void {
         (finding.publicApi ? ' [public API: may have consumers outside this program]' : '');
       console.log(`  <${finding.component}> — ${finding.renderSites} render site(s)${markers}`);
     }
-    const tag = kindTag(finding.kind);
-    console.log(`    ${finding.prop.padEnd(28)} ${tag} ${findingStatus(finding)}`);
+    console.log(`    ${finding.prop.padEnd(28)} ${kindTag(finding.kind)} ${KIND_STATUS[finding.kind](finding)}`);
   }
 }
 
