@@ -43,7 +43,7 @@ export function markPublicComponents({
   for (const dir of configDirs) {
     let pkg: { private?: boolean; [k: string]: unknown };
     try {
-      pkg = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8'));
+      pkg = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8')) as typeof pkg;
     } catch {
       continue; // no package.json next to this tsconfig -> internal code
     }
@@ -52,9 +52,17 @@ export function markPublicComponents({
     const candidates = new Set<string>();
     harvestStrings(pkg.exports, candidates);
     for (const field of ['main', 'module', 'browser', 'types']) {
-      if (typeof pkg[field] === 'string') candidates.add(pkg[field] as string);
+      const value = pkg[field];
+      if (typeof value === 'string') candidates.add(value);
     }
-    for (const barrel of ['index.ts', 'index.tsx', 'index.mts', 'src/index.ts', 'src/index.tsx', 'src/index.mts']) {
+    for (const barrel of [
+      'index.ts',
+      'index.tsx',
+      'index.mts',
+      'src/index.ts',
+      'src/index.tsx',
+      'src/index.mts',
+    ]) {
       candidates.add(barrel);
     }
 

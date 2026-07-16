@@ -4,7 +4,12 @@ import path from 'node:path';
 import process from 'node:process';
 import { parseArgs } from 'node:util';
 import { ALL_FINDING_KINDS, DEFAULT_MIN_SITES, analyzeProject } from '../lib/analyze.mjs';
-import { BaselineError, DEFAULT_BASELINE_PATH, loadBaseline, writeBaseline } from '../lib/baseline.mjs';
+import {
+  BaselineError,
+  DEFAULT_BASELINE_PATH,
+  loadBaseline,
+  writeBaseline,
+} from '../lib/baseline.mjs';
 import { applyFixes, planFixes } from '../lib/fixer.mjs';
 import type { AppliedEdit } from '../lib/fixer.mjs';
 import type { AnalyzeResult, Finding, FindingKind } from '../lib/analyzer/types.mjs';
@@ -93,14 +98,17 @@ const KIND_STATUS: Record<FindingKind, (f: Finding) => string> = {
   never: () => 'never passed by any parent',
   'tests-only': () => 'only passed from test/story files',
   unconsumed: () => 'accepted but never read or forwarded by the component body',
-  'callback-never-invoked': () => 'callback passed by parents but never referenced by the component',
-  always: (f) => `passed by every non-test parent (${f.nonTestRenderSites} non-test render site(s))`,
+  'callback-never-invoked': () =>
+    'callback passed by parents but never referenced by the component',
+  always: (f) =>
+    `passed by every non-test parent (${f.nonTestRenderSites} non-test render site(s))`,
   'same-literal': (f) => `always passed the same value when provided: ${f.literalValue}`,
   'passed-equals-default': (f) =>
     `every provided value equals the destructuring default (${f.literalValue}); the attribute is redundant`,
   'type-wider-than-usage': (f) =>
     `type is wider than usage; only ever passed: ${f.observedValues?.join(', ') ?? ''} — consider a union type`,
-  'union-variant-never': (f) => `union variant(s) never passed: ${f.missingVariants?.join(', ') ?? ''}`,
+  'union-variant-never': (f) =>
+    `union variant(s) never passed: ${f.missingVariants?.join(', ') ?? ''}`,
 };
 
 const args = process.argv.slice(2);
@@ -159,7 +167,10 @@ const baselinePath = values.baseline;
 
 let rules: FindingKind[] | undefined;
 if (values.rules !== undefined) {
-  const names = values.rules.split(',').map((r) => r.trim()).filter(Boolean);
+  const names = values.rules
+    .split(',')
+    .map((r) => r.trim())
+    .filter(Boolean);
   const bad = names.filter((r) => !(ALL_FINDING_KINDS as string[]).includes(r));
   if (bad.length > 0) usageError(`Unknown rule(s): ${bad.join(', ')}`);
   if (names.length === 0) usageError('--rules requires at least one rule');
@@ -180,7 +191,12 @@ const tsconfigPaths = positionals.length > 0 ? positionals : ['tsconfig.json'];
 
 let result: AnalyzeResult;
 try {
-  result = analyzeProject(tsconfigPaths, { includeTestComponents, rules, minSites, assumeInternal });
+  result = analyzeProject(tsconfigPaths, {
+    includeTestComponents,
+    rules,
+    minSites,
+    assumeInternal,
+  });
 } catch (error) {
   const message = error instanceof Error ? error.message : String(error);
   console.error(message);
@@ -249,7 +265,9 @@ function printFindingSection(title: string, sectionFindings: Finding[]): void {
         (finding.publicApi ? ' [public API: may have consumers outside this program]' : '');
       console.log(`  <${finding.component}> — ${finding.renderSites} render site(s)${markers}`);
     }
-    console.log(`    ${finding.prop.padEnd(28)} ${kindTag(finding.kind)} ${KIND_STATUS[finding.kind](finding)}`);
+    console.log(
+      `    ${finding.prop.padEnd(28)} ${kindTag(finding.kind)} ${KIND_STATUS[finding.kind](finding)}`,
+    );
   }
 }
 
@@ -309,14 +327,20 @@ if (asJson) {
   const baselinedCount = findings.length - shown.length;
 
   printFindingSection('Definite Findings', shown.filter(gates));
-  printFindingSection('Advisory Findings', shown.filter((f) => !gates(f)));
+  printFindingSection(
+    'Advisory Findings',
+    shown.filter((f) => !gates(f)),
+  );
 
   if (verbose && skipped.length > 0) {
-    console.log(`\n${heading('Skipped Components')} ${subdued('(opaque spread may pass any prop)')}`);
+    console.log(
+      `\n${heading('Skipped Components')} ${subdued('(opaque spread may pass any prop)')}`,
+    );
     for (const entry of skipped) console.log(`  <${entry.component}> in ${rel(entry.file)}`);
   }
 
-  const baselineNote = baselinePath === undefined ? '' : ` ${baselinedCount} baselined finding(s) hidden.`;
+  const baselineNote =
+    baselinePath === undefined ? '' : ` ${baselinedCount} baselined finding(s) hidden.`;
   console.log(
     `\n${shown.length} finding(s) across ${new Set(shown.map((f) => `${f.file}:${f.component}`)).size} component(s)` +
       ` (${shown.filter(gates).length} definite).${baselineNote} ${componentsAnalyzed} components analyzed, ${skipped.length} skipped.`,

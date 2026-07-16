@@ -61,9 +61,7 @@ interface BuildFindingsArgs {
 }
 
 function nonNullableMembers(type: ts.UnionType): ts.Type[] {
-  return type.types.filter(
-    (t) => (t.flags & (ts.TypeFlags.Undefined | ts.TypeFlags.Null)) === 0,
-  );
+  return type.types.filter((t) => (t.flags & (ts.TypeFlags.Undefined | ts.TypeFlags.Null)) === 0);
 }
 
 function isBooleanLike(type: ts.Type): boolean {
@@ -104,7 +102,8 @@ function suppressionFromComment(commentText: string): 'all' | FindingKind[] | un
 // (`prop-doc-ignore never, always`) suppresses only those.
 function propSuppression(
   prop: ts.Symbol,
-  isProjectFile: (sf: ts.SourceFile) => boolean,): 'all' | Set<FindingKind> | undefined {
+  isProjectFile: (sf: ts.SourceFile) => boolean,
+): 'all' | Set<FindingKind> | undefined {
   const kinds = new Set<FindingKind>();
   for (const decl of prop.declarations ?? []) {
     const sf = decl.getSourceFile();
@@ -169,7 +168,11 @@ function declarationDeletionSpan(decl: ts.Declaration, sf: ts.SourceFile): TextS
 
 /** Declaration-side fix targets, when the prop is one plain property signature in project code. */
 function declarationNodeInfo(
-  prop: ts.Symbol,): Pick<OwnPropMeta, 'declNodeSpan' | 'typeNodeSpan' | 'typeNodeIsWideKeyword' | 'unionMemberNodes'> {
+  prop: ts.Symbol,
+): Pick<
+  OwnPropMeta,
+  'declNodeSpan' | 'typeNodeSpan' | 'typeNodeIsWideKeyword' | 'unionMemberNodes'
+> {
   const decls = prop.declarations ?? [];
   const decl = decls.length === 1 ? decls[0] : undefined;
   if (!decl || !(ts.isPropertySignature(decl) || ts.isPropertyDeclaration(decl)) || !decl.type) {
@@ -181,7 +184,8 @@ function declarationNodeInfo(
     declNodeSpan: declarationDeletionSpan(decl, sf),
     typeNodeSpan: { file: sf.fileName, start: typeNode.getStart(sf), end: typeNode.getEnd() },
     typeNodeIsWideKeyword:
-      typeNode.kind === ts.SyntaxKind.StringKeyword || typeNode.kind === ts.SyntaxKind.NumberKeyword,
+      typeNode.kind === ts.SyntaxKind.StringKeyword ||
+      typeNode.kind === ts.SyntaxKind.NumberKeyword,
     unionMemberNodes: ts.isUnionTypeNode(typeNode)
       ? typeNode.types.map((t) => ({ key: unionMemberNodeKey(t), text: t.getText(sf) }))
       : undefined,
@@ -191,14 +195,17 @@ function declarationNodeInfo(
 function ownProps(
   component: ComponentRecord,
   checker: ts.TypeChecker,
-  isProjectFile: (sf: ts.SourceFile) => boolean,): OwnPropMeta[] {
+  isProjectFile: (sf: ts.SourceFile) => boolean,
+): OwnPropMeta[] {
   const param = component.fnNode.parameters[0];
   if (!param) return [];
   const type = checker.getTypeAtLocation(param);
   const result: OwnPropMeta[] = [];
 
   for (const prop of type.getProperties()) {
-    const declaredInProject = (prop.declarations ?? []).some((d) => isProjectFile(d.getSourceFile()));
+    const declaredInProject = (prop.declarations ?? []).some((d) =>
+      isProjectFile(d.getSourceFile()),
+    );
     if (!declaredInProject) continue;
 
     const propType = checker.getTypeOfSymbolAtLocation(prop, param);
@@ -249,10 +256,13 @@ function sameLiteralFix(
 function typeWiderFix(prop: OwnPropMeta, stats: PassStats): FixEdit[] | undefined {
   // A test-file site passing a non-literal value would no longer typecheck
   // against the narrowed union, so the fix requires literals everywhere.
-  if (!prop.typeNodeSpan || !prop.typeNodeIsWideKeyword || stats.unknownValueInTest) return undefined;
+  if (!prop.typeNodeSpan || !prop.typeNodeIsWideKeyword || stats.unknownValueInTest)
+    return undefined;
   const keys = [...stats.literalAttrSpans.keys()];
   if (keys.length === 0 || !keys.every(isSourceableKey)) return undefined;
-  const texts = keys.map(sourceTextOfKey).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  const texts = keys
+    .map(sourceTextOfKey)
+    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
   return [{ ...prop.typeNodeSpan, newText: texts.join(' | ') }];
 }
 
@@ -261,8 +271,11 @@ function unionVariantFix(prop: OwnPropMeta, stats: PassStats): FixEdit[] | undef
   if (!prop.typeNodeSpan || !prop.unionMemberNodes || stats.unknownValueInTest) return undefined;
   // Only variants that no site anywhere (test files included) passes may go;
   // non-literal members (e.g. an explicit `undefined`) are always kept.
-  const kept = prop.unionMemberNodes.filter((m) => m.key === undefined || stats.literalAttrSpans.has(m.key));
-  if (kept.length === prop.unionMemberNodes.length || !kept.some((m) => m.key !== undefined)) return undefined;
+  const kept = prop.unionMemberNodes.filter(
+    (m) => m.key === undefined || stats.literalAttrSpans.has(m.key),
+  );
+  if (kept.length === prop.unionMemberNodes.length || !kept.some((m) => m.key !== undefined))
+    return undefined;
   return [{ ...prop.typeNodeSpan, newText: kept.map((m) => m.text).join(' | ') }];
 }
 
@@ -281,7 +294,10 @@ function removePropFix(
   if (prop.name === 'children' || usage.opaque || !prop.declNodeSpan) return undefined;
   const binding = usage.bindingElementSpans.get(prop.name);
   if (binding === 'multiple') return undefined;
-  if (stats && (stats.passedViaNonAttribute || stats.deletableAttrSpans.length !== stats.passedAttrCount)) {
+  if (
+    stats &&
+    (stats.passedViaNonAttribute || stats.deletableAttrSpans.length !== stats.passedAttrCount)
+  ) {
     return undefined;
   }
   const edits: FixEdit[] = [{ ...prop.declNodeSpan, newText: '' }];
@@ -290,7 +306,10 @@ function removePropFix(
   return edits;
 }
 
-function compareFindingsByLocation(a: Finding | SkippedComponent, b: Finding | SkippedComponent): number {
+function compareFindingsByLocation(
+  a: Finding | SkippedComponent,
+  b: Finding | SkippedComponent,
+): number {
   const byFile = a.file.localeCompare(b.file);
   if (byFile !== 0) return byFile;
   const byComponent = a.component.localeCompare(b.component);
@@ -349,7 +368,11 @@ export function buildFindings({
       if (!isConsumed(usage, prop.name)) {
         if (prop.isCallable && passedStats) {
           if (active('callback-never-invoked')) {
-            push({ ...base, kind: 'callback-never-invoked', fix: removePropFix(prop, passedStats, usage) });
+            push({
+              ...base,
+              kind: 'callback-never-invoked',
+              fix: removePropFix(prop, passedStats, usage),
+            });
           }
         } else if (active('unconsumed')) {
           push({ ...base, kind: 'unconsumed', fix: removePropFix(prop, passedStats, usage) });
@@ -380,7 +403,10 @@ export function buildFindings({
           // Only attributes whose value was verified to be this exact literal
           // have spans under this key; sites passing the default through a
           // variable stay untouched.
-          fix: (passedStats.literalAttrSpans.get(defaultKey) ?? []).map((s) => ({ ...s, newText: '' })),
+          fix: (passedStats.literalAttrSpans.get(defaultKey) ?? []).map((s) => ({
+            ...s,
+            newText: '',
+          })),
         });
       }
 
@@ -428,11 +454,7 @@ export function buildFindings({
         });
       }
 
-      if (
-        active('union-variant-never') &&
-        prop.unionVariants.length > 1 &&
-        literalSites
-      ) {
+      if (active('union-variant-never') && prop.unionVariants.length > 1 && literalSites) {
         const seen = prop.unionVariants.filter((v) => passedStats.literalValues.has(v.key));
         const missing = prop.unionVariants.filter((v) => !passedStats.literalValues.has(v.key));
         if (missing.length > 0) {

@@ -11,7 +11,7 @@ Find React component prop-API drift that accumulates silently across a codebase:
 - callsites that always pass exactly the destructuring default (delete the attribute),
 - wide `string`/`number` props only ever passed a small literal set (narrow to a union type).
 
-The component handles the prop correctly, the types check, the branch is tested by nothing and reachable by nothing. Greps can't find these because the evidence is an *absence* spread across every other file. This tool runs a whole-program analysis with the TypeScript type checker and reports them.
+The component handles the prop correctly, the types check, the branch is tested by nothing and reachable by nothing. Greps can't find these because the evidence is an _absence_ spread across every other file. This tool runs a whole-program analysis with the TypeScript type checker and reports them.
 
 ## Roadmap
 
@@ -56,8 +56,8 @@ src/containers/common/CustomerSelector.tsx
 
 ### Options
 
-| Flag                          | Effect                                                              |
-| ----------------------------- | ------------------------------------------------------------------- |
+| Flag                        | Effect                                                              |
+| --------------------------- | ------------------------------------------------------------------- |
 | `--json`                    | Machine-readable output                                             |
 | `--verbose`                 | Also list components skipped due to untyped spreads                 |
 | `--include-test-components` | Analyze components defined in test/story files too                  |
@@ -74,7 +74,7 @@ src/containers/common/CustomerSelector.tsx
 `--fix` applies edits that are mechanical and behavior-preserving. Fixable rules:
 
 - `passed-equals-default` — deletes the redundant attribute at every callsite whose value was verified to be the literal default (a callsite passing the default through a variable is left alone).
-- `same-literal` — folds the always-passed literal into the destructuring default (replacing a never-exercised default, or inserting one) and deletes the attribute everywhere; only when the prop is optional, destructured, and *every* render site verifiably passes that literal.
+- `same-literal` — folds the always-passed literal into the destructuring default (replacing a never-exercised default, or inserting one) and deletes the attribute everywhere; only when the prop is optional, destructured, and _every_ render site verifiably passes that literal.
 - `type-wider-than-usage` — replaces a bare `string`/`number` annotation with the observed-literal union.
 - `union-variant-never` — rewrites a direct union type keeping only variants some site passes.
 - `never` / `unconsumed` / `callback-never-invoked` — removes the prop entirely: the declaration line, the (unreferenced) destructuring binding, and every callsite attribute. Only when the body verifiably ignores the prop and every callsite value is side-effect-free (literal, arrow/function expression, bare identifier); a spread, JSX nesting, or a call-expression value blocks the fix.
@@ -119,13 +119,13 @@ const { findings, skipped, componentsAnalyzed } = analyzeProject('tsconfig.json'
 1. Collects component definitions: uppercase-named function declarations and variable declarations initialized with a function, unwrapping `memo` / `forwardRef` / `observer`.
 2. Walks all JSX and resolves each tag back to its component symbol through imports and aliases, recording which attributes each render site passes. Spread attributes (`{...props}`) are expanded via their static type; JSX nesting counts as passing `children`.
 3. Analyzes each component body's own prop usage — destructuring (including defaults and rest forwarding) and `props.x` access — bailing out conservatively when the props object escapes whole (aliased, spread, passed to a function).
-4. Reports props — declared in *your* code, not inherited from library types — that are never passed, only passed from tests, always passed by non-test parents, dead union variants, never consumed by the body, never-invoked callbacks, or redundantly restated at every callsite.
+4. Reports props — declared in _your_ code, not inherited from library types — that are never passed, only passed from tests, always passed by non-test parents, dead union variants, never consumed by the body, never-invoked callbacks, or redundantly restated at every callsite.
 
 ## Avoiding false positives
 
 - A spread typed `any` / `unknown` or with an index signature could pass anything, so the component is **skipped** rather than guessed at (listed under `--verbose`).
 - A component that also escapes as a plain value (`component={Foo}`, HOCs, `createElement`) may receive props through paths the analysis can't see; its findings are marked **low confidence** and don't affect the exit code.
-- Props passed *only* from test/story files are reported as a separate `tests-only` category, and components *defined* in test files are excluded by default.
+- Props passed _only_ from test/story files are reported as a separate `tests-only` category, and components _defined_ in test files are excluded by default.
 - Components exported from a non-`private` package's entry point may have consumers outside the program; their findings are marked **public API** and never gate the exit code (disable with `--assume-internal`).
 
 ## Known blind spots

@@ -30,7 +30,10 @@ function keyOf(entry: BaselineEntry): string {
   return [entry.file, entry.component, entry.prop, entry.kind].join('|');
 }
 
-export function writeBaseline(baselinePath: string, findings: Finding[]): { resolvedPath: string; count: number } {
+export function writeBaseline(
+  baselinePath: string,
+  findings: Finding[],
+): { resolvedPath: string; count: number } {
   const resolvedPath = path.resolve(baselinePath);
   const baselineDir = path.dirname(resolvedPath);
   const entries = findings.map((f) => entryFor(f, baselineDir));
@@ -62,7 +65,7 @@ export function loadBaseline(baselinePath: string): (finding: Finding) => boolea
   }
   let parsed: { version?: number; findings?: BaselineEntry[] };
   try {
-    parsed = JSON.parse(raw);
+    parsed = JSON.parse(raw) as typeof parsed;
   } catch {
     throw new BaselineError(`Baseline file is not valid JSON: ${baselinePath}`);
   }

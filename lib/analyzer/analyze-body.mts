@@ -24,7 +24,11 @@ function bindingElementDeletionSpan(
   const elements = pattern.elements;
   const element = elements[index];
   if (index < elements.length - 1) {
-    return { file: sf.fileName, start: element.getStart(sf), end: elements[index + 1].getStart(sf) };
+    return {
+      file: sf.fileName,
+      start: element.getStart(sf),
+      end: elements[index + 1].getStart(sf),
+    };
   }
   if (index > 0) {
     return { file: sf.fileName, start: elements[index - 1].getEnd(), end: element.getEnd() };
@@ -36,7 +40,8 @@ function bindingElementDeletionSpan(
 function literalKeyOfExpression(expr: ts.Expression): string | undefined {
   if (expr.kind === ts.SyntaxKind.TrueKeyword) return literalKey(true);
   if (expr.kind === ts.SyntaxKind.FalseKeyword) return literalKey(false);
-  if (ts.isStringLiteral(expr) || ts.isNoSubstitutionTemplateLiteral(expr)) return literalKey(expr.text);
+  if (ts.isStringLiteral(expr) || ts.isNoSubstitutionTemplateLiteral(expr))
+    return literalKey(expr.text);
   if (ts.isNumericLiteral(expr)) return literalKey(Number(expr.text));
   if (
     ts.isPrefixUnaryExpression(expr) &&
@@ -73,8 +78,7 @@ function isNamePosition(id: ts.Identifier): boolean {
   );
 }
 
-function collectValueIdentifiers(
-  fnNode: ts.FunctionLikeDeclaration,): Map<string, ts.Identifier[]> {
+function collectValueIdentifiers(fnNode: ts.FunctionLikeDeclaration): Map<string, ts.Identifier[]> {
   const byText = new Map<string, ts.Identifier[]>();
   const visit = (node: ts.Node): void => {
     if (ts.isIdentifier(node) && !isNamePosition(node) && !inTypeContext(node, fnNode)) {
@@ -100,7 +104,8 @@ function symbolAt(id: ts.Identifier, checker: ts.TypeChecker): ts.Symbol | undef
 function isBindingReferenced(
   nameNode: ts.Identifier,
   identifiers: Map<string, ts.Identifier[]>,
-  checker: ts.TypeChecker,): boolean {
+  checker: ts.TypeChecker,
+): boolean {
   const symbol = checker.getSymbolAtLocation(nameNode);
   if (!symbol) return true; // unresolvable -> assume referenced rather than flag
   for (const id of identifiers.get(nameNode.text) ?? []) {
@@ -147,10 +152,7 @@ function recordBindingElement(
   }
   // Nested destructuring always reads into the prop; a plain binding only
   // counts as consumed when something references it.
-  if (
-    !ts.isIdentifier(element.name) ||
-    isBindingReferenced(element.name, identifiers, checker)
-  ) {
+  if (!ts.isIdentifier(element.name) || isBindingReferenced(element.name, identifiers, checker)) {
     usage.consumed.add(propName);
   }
 }
@@ -184,9 +186,7 @@ function processBindingPattern(pattern: ts.ObjectBindingPattern, ctx: PatternCon
  * props object that isn't a property access or a destructuring makes the
  * result opaque, so consumption rules stay silent instead of guessing.
  */
-export function analyzeBodyUsage(
-  component: ComponentRecord,
-  checker: ts.TypeChecker,): BodyUsage {
+export function analyzeBodyUsage(component: ComponentRecord, checker: ts.TypeChecker): BodyUsage {
   const fnNode = component.fnNode;
   const param = fnNode.parameters[0];
   if (!param || !fnNode.body) return opaqueUsage();

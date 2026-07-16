@@ -202,7 +202,9 @@ test('--fix --json reports the applied edits and per-finding fix spans', () => {
     assert.ok(report.fixes.edits.every((e) => e.file && e.line > 0 && (e.removed || e.newText)));
     const finding = report.findings.find((f) => f.kind === 'passed-equals-default');
     assert.equal(finding.fix.length, 3);
-    assert.ok(finding.fix.every((e) => Number.isInteger(e.start) && e.end > e.start && e.newText === ''));
+    assert.ok(
+      finding.fix.every((e) => Number.isInteger(e.start) && e.end > e.start && e.newText === ''),
+    );
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

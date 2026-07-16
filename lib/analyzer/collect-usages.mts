@@ -58,9 +58,7 @@ function isDeclarationContext(identifier: ts.Identifier): boolean {
 }
 
 function hasMeaningfulChildren(jsxElement: ts.JsxElement): boolean {
-  return jsxElement.children.some(
-    (child) => !ts.isJsxText(child) || child.text.trim().length > 0,
-  );
+  return jsxElement.children.some((child) => !ts.isJsxText(child) || child.text.trim().length > 0);
 }
 
 function literalFromAttribute(attr: ts.JsxAttribute): LiteralValue | undefined {
@@ -112,7 +110,8 @@ function typeAdmitsUndefined(type: ts.Type): boolean {
 function resolveToComponent(
   symbol: ts.Symbol | undefined,
   checker: ts.TypeChecker,
-  componentsByDecl: Map<ts.Declaration, ComponentRecord>,): ComponentRecord | undefined {
+  componentsByDecl: Map<ts.Declaration, ComponentRecord>,
+): ComponentRecord | undefined {
   if (!symbol) return undefined;
   let s = symbol;
   if (s.flags & ts.SymbolFlags.Alias) {
@@ -220,7 +219,9 @@ export function collectUsages({
       ts.isJsxExpression(attr.initializer) &&
       attr.initializer.expression
     ) {
-      possiblyUndefined = typeAdmitsUndefined(checker.getTypeAtLocation(attr.initializer.expression));
+      possiblyUndefined = typeAdmitsUndefined(
+        checker.getTypeAtLocation(attr.initializer.expression),
+      );
     }
     recordPassed(component, attr.name.getText(sf), sf.fileName, {
       isTestFile: inTestFile,
@@ -276,7 +277,8 @@ export function collectUsages({
 
     for (const attr of attributes.properties) {
       if (ts.isJsxAttribute(attr)) recordAttribute(component, attr, sf, inTestFile, siteId);
-      else if (ts.isJsxSpreadAttribute(attr)) recordSpreadAttribute(component, attr, sf, inTestFile, siteId);
+      else if (ts.isJsxSpreadAttribute(attr))
+        recordSpreadAttribute(component, attr, sf, inTestFile, siteId);
     }
 
     if (childrenPassed) {

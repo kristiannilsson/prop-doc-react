@@ -1,6 +1,6 @@
 # Roadmap
 
-This roadmap focuses on checks that are generally *not* covered by standard TypeScript checks or common lint rules.
+This roadmap focuses on checks that are generally _not_ covered by standard TypeScript checks or common lint rules.
 
 ## Current
 
@@ -14,7 +14,7 @@ Implemented and shipping:
 - Severity tiers per rule family (definite vs advisory), reflected in the exit code: only high-confidence definite findings fail the gate.
 - Rule-level enable/disable via `--rules`.
 - Minimum render-site threshold for statistical rules (`always`, union variants, `same-literal`) via `--min-sites` (default 3), so "always passed" can't mean "passed once".
-- Baseline file (`--write-baseline` / `--baseline`): record current findings, fail only on *new* ones — makes the CI gate adoptable on existing codebases without a full cleanup first.
+- Baseline file (`--write-baseline` / `--baseline`): record current findings, fail only on _new_ ones — makes the CI gate adoptable on existing codebases without a full cleanup first.
 - Inline suppression comments on the prop declaration (`// prop-doc-ignore` or `// prop-doc-ignore <rule, ...>`).
 - Consumption analysis of the component body (destructuring, `props.x` access, rest-spread forwarding; bails out when the props object escapes whole):
   - Prop accepted (required props included) but never read and never forwarded (`unconsumed`).
@@ -25,7 +25,7 @@ Implemented and shipping:
 - Wide `string`/`number` props whose observed values are a small repeated literal set (`type-wider-than-usage`) — suggest a union type.
 - Whole-program view: multiple tsconfig paths merge into one program, and TypeScript project references are followed automatically, so monorepo cross-package render sites are visible. (Note: cross-package imports must resolve to sources — relative paths or `paths` aliases; imports resolving to a package's built `.d.ts` are not connected back to the source component.)
 - Public-API awareness: components exported from a non-`private` package's entry point (package.json `exports`/`main` or `index.ts` / `src/index.ts` barrels) are marked `publicApi` and never gate CI — external consumers are invisible to the program. `--assume-internal` disables the demotion.
-Removed (0.3): `default-never-used` duplicated `always` (an optional defaulted prop that every parent passes fired both on the same evidence), and the one-sided boolean rules (`boolean-never-true` / `boolean-never-false`) flagged the bare-attribute JSX idiom rather than drift.
+  Removed (0.3): `default-never-used` duplicated `always` (an optional defaulted prop that every parent passes fired both on the same evidence), and the one-sided boolean rules (`boolean-never-true` / `boolean-never-false`) flagged the bare-attribute JSX idiom rather than drift.
 
 - Autofix phases 1–3: `--fix` (with `--dry-run` preview) fixes `passed-equals-default` (delete the redundant attribute), `same-literal` (fold the literal into the destructuring default, delete the attributes), `type-wider-than-usage` (narrow to the observed union), `union-variant-never` (prune unseen variants), and `never`/`unconsumed`/`callback-never-invoked` (whole-prop removal: declaration, binding, callsite attributes), then re-runs the analysis; low-confidence, public-API, and baselined findings are never fixed, type edits require verified literals at every site (test files included), and removal requires the body to verifiably ignore the prop plus side-effect-free callsite values. Findings with a fixer carry their edits in the JSON output (`fix` spans).
 

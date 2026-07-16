@@ -5,6 +5,14 @@
   "type": "module",
   "license": "MIT",
   "author": "Kristian Nilsson",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kristiannilsson/prop-doc-react.git"
+  },
+  "bugs": {
+    "url": "https://github.com/kristiannilsson/prop-doc-react/issues"
+  },
+  "homepage": "https://github.com/kristiannilsson/prop-doc-react#readme",
   "bin": {
     "prop-doc": "dist/bin/cli.mjs"
   },
@@ -21,7 +29,13 @@
     "clean": "node -e \"import('node:fs').then(fs=>fs.rmSync('dist',{recursive:true,force:true}))\"",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "npm run clean && npm run build && node --test \"test/*.test.mjs\""
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "check": "npm run format:check && npm run lint && npm run typecheck",
+    "test": "npm run clean && npm run build && node --test \"test/*.test.mjs\"",
+    "prepublishOnly": "npm run check && npm test"
   },
   "dependencies": {
     "typescript": "~5.9.0"
@@ -39,6 +53,11 @@
     "lint"
   ],
   "devDependencies": {
-    "@types/node": "^26.1.1"
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^26.1.1",
+    "eslint": "^10.7.0",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.9.5",
+    "typescript-eslint": "^8.64.0"
   }
 }

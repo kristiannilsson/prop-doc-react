@@ -13,7 +13,9 @@ interface CollectComponentsResult {
   componentNames: Set<string>;
 }
 
-function unwrapWrapperCall(expr: ts.Expression): ts.ArrowFunction | ts.FunctionExpression | undefined {
+function unwrapWrapperCall(
+  expr: ts.Expression,
+): ts.ArrowFunction | ts.FunctionExpression | undefined {
   let node: ts.Expression = expr;
   for (let depth = 0; depth < 4 && ts.isCallExpression(node); depth++) {
     const callee = node.expression;
@@ -48,7 +50,10 @@ function createComponentRecord(
   };
 }
 
-export function collectComponents({ program, isProjectFile }: CollectComponentsArgs): CollectComponentsResult {
+export function collectComponents({
+  program,
+  isProjectFile,
+}: CollectComponentsArgs): CollectComponentsResult {
   const componentsByDecl = new Map<ts.Declaration, ComponentRecord>();
   const components: ComponentRecord[] = [];
   const componentNames = new Set<string>();

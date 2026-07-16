@@ -3,7 +3,12 @@ import ts from 'typescript';
 import { collectComponents } from './analyzer/collect-components.mjs';
 import { collectUsages } from './analyzer/collect-usages.mjs';
 import { markPublicComponents } from './analyzer/public-api.mjs';
-import { ALL_FINDING_KINDS, DEFAULT_MIN_SITES, FINDING_SEVERITY, buildFindings } from './analyzer/build-findings.mjs';
+import {
+  ALL_FINDING_KINDS,
+  DEFAULT_MIN_SITES,
+  FINDING_SEVERITY,
+  buildFindings,
+} from './analyzer/build-findings.mjs';
 import { TEST_FILE_RE } from './analyzer/constants.mjs';
 import type { AnalyzeResult, FindingKind } from './analyzer/types.mjs';
 

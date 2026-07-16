@@ -22,7 +22,9 @@ test('flags an optional prop never passed by any parent', () => {
 });
 
 test('does not flag an optional prop that some parent passes', () => {
-  const problematic = findingsFor('Alive').filter((f) => f.kind === 'never' || f.kind === 'tests-only');
+  const problematic = findingsFor('Alive').filter(
+    (f) => f.kind === 'never' || f.kind === 'tests-only',
+  );
   assert.deepEqual(problematic, []);
 });
 
@@ -46,7 +48,9 @@ test('skips a component hit by an untyped (any) spread instead of guessing', () 
 });
 
 test('counts JSX nesting as passing the children prop', () => {
-  const problematic = findingsFor('Kids').filter((f) => f.kind === 'never' || f.kind === 'tests-only');
+  const problematic = findingsFor('Kids').filter(
+    (f) => f.kind === 'never' || f.kind === 'tests-only',
+  );
   assert.deepEqual(problematic, []);
 });
 
@@ -352,7 +356,11 @@ test('project references are followed automatically', () => {
   assert.ok(!app.findings.some((f) => f.prop === 'tone'));
   // extra.tsx is never imported by the app; only the followed reference to
   // the ui tsconfig brings it into the program.
-  assert.ok(app.findings.some((f) => f.component === 'Unreferenced' && f.prop === 'lonely' && f.kind === 'never'));
+  assert.ok(
+    app.findings.some(
+      (f) => f.component === 'Unreferenced' && f.prop === 'lonely' && f.kind === 'never',
+    ),
+  );
 });
 
 const publicApiTsconfig = path.join(pkgRoot, 'testdata', 'publicapi', 'tsconfig.json');
