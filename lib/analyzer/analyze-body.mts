@@ -1,10 +1,9 @@
 import ts from 'typescript';
-import type { BodyUsage, ComponentRecord, TextSpan } from './types.mjs';
-import { literalKey } from './constants.mjs';
+import { literalKey, type BodyUsage, type ComponentRecord, type TextSpan } from './types.mjs';
 
-function opaqueUsage(): BodyUsage {
+function newUsage(opaque: boolean): BodyUsage {
   return {
-    opaque: true,
+    opaque,
     consumed: new Set(),
     defaulted: new Map(),
     restRemainders: [],
@@ -13,9 +12,11 @@ function opaqueUsage(): BodyUsage {
   };
 }
 
-// The span deletes the binding element together with one separating comma:
-// up to the next element's start, or (for the last element) back through the
-// previous element's end. A sole element keeps its exact span.
+const opaqueUsage = (): BodyUsage => newUsage(true);
+
+// Deletes the binding element together with one separating comma: up to the
+// next element's start, or (for the last element) back through the previous
+// element's end.
 function bindingElementDeletionSpan(
   pattern: ts.ObjectBindingPattern,
   index: number,
@@ -36,7 +37,6 @@ function bindingElementDeletionSpan(
   return { file: sf.fileName, start: element.getStart(sf), end: element.getEnd() };
 }
 
-/** Type-tagged literal key of a default expression, or undefined when it isn't a literal. */
 function literalKeyOfExpression(expr: ts.Expression): string | undefined {
   if (expr.kind === ts.SyntaxKind.TrueKeyword) return literalKey(true);
   if (expr.kind === ts.SyntaxKind.FalseKeyword) return literalKey(false);
@@ -66,7 +66,6 @@ function inTypeContext(node: ts.Node, stopAt: ts.Node): boolean {
   return false;
 }
 
-/** Identifier positions that are names/labels, not value references. */
 function isNamePosition(id: ts.Identifier): boolean {
   const parent = id.parent;
   return (
@@ -93,8 +92,6 @@ function collectValueIdentifiers(fnNode: ts.FunctionLikeDeclaration): Map<string
 }
 
 function symbolAt(id: ts.Identifier, checker: ts.TypeChecker): ts.Symbol | undefined {
-  // A shorthand property (`{ foo }` in an object literal) resolves to the
-  // property symbol; the value side is what references the binding.
   if (ts.isShorthandPropertyAssignment(id.parent) && id.parent.name === id) {
     return checker.getShorthandAssignmentValueSymbol(id.parent);
   }
@@ -107,7 +104,7 @@ function isBindingReferenced(
   checker: ts.TypeChecker,
 ): boolean {
   const symbol = checker.getSymbolAtLocation(nameNode);
-  if (!symbol) return true; // unresolvable -> assume referenced rather than flag
+  if (!symbol) return true;
   for (const id of identifiers.get(nameNode.text) ?? []) {
     if (id === nameNode) continue;
     if (symbolAt(id, checker) === symbol) return true;
@@ -143,15 +140,12 @@ function recordBindingElement(
       end: element.initializer.getEnd(),
     });
   } else if (ts.isIdentifier(element.name)) {
-    // No default yet: a zero-length span marks where one can be inserted.
     usage.defaultTargets.set(propName, {
       file: sf.fileName,
       start: element.name.getEnd(),
       end: element.name.getEnd(),
     });
   }
-  // Nested destructuring always reads into the prop; a plain binding only
-  // counts as consumed when something references it.
   if (!ts.isIdentifier(element.name) || isBindingReferenced(element.name, identifiers, checker)) {
     usage.consumed.add(propName);
   }
@@ -169,7 +163,6 @@ function processBindingPattern(pattern: ts.ObjectBindingPattern, ctx: PatternCon
     }
     const nameSource = element.propertyName ?? element.name;
     if (!ts.isIdentifier(nameSource) && !ts.isStringLiteral(nameSource)) {
-      // Computed or otherwise dynamic property name: can't tell which prop.
       usage.opaque = true;
       continue;
     }
@@ -191,14 +184,7 @@ export function analyzeBodyUsage(component: ComponentRecord, checker: ts.TypeChe
   const param = fnNode.parameters[0];
   if (!param || !fnNode.body) return opaqueUsage();
 
-  const usage: BodyUsage = {
-    opaque: false,
-    consumed: new Set(),
-    defaulted: new Map(),
-    restRemainders: [],
-    defaultTargets: new Map(),
-    bindingElementSpans: new Map(),
-  };
+  const usage = newUsage(false);
   const identifiers = collectValueIdentifiers(fnNode);
   const ctx: PatternContext = { usage, identifiers, checker };
 
@@ -230,7 +216,6 @@ export function analyzeBodyUsage(component: ComponentRecord, checker: ts.TypeChe
     ) {
       processBindingPattern(parent.name, ctx);
     } else {
-      // The props object escapes (aliased, spread, passed to a call, ...).
       return opaqueUsage();
     }
   }

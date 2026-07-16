@@ -5,7 +5,6 @@ import type { Finding } from './analyzer/types.mjs';
 export const DEFAULT_BASELINE_PATH = '.prop-doc-baseline.json';
 const BASELINE_VERSION = 1;
 
-/** A baseline problem the caller should surface as a usage error. */
 export class BaselineError extends Error {}
 
 interface BaselineEntry {
@@ -15,8 +14,8 @@ interface BaselineEntry {
   kind: string;
 }
 
-// Baseline entries store paths relative to the baseline file so the file can
-// be committed and used regardless of the invocation directory.
+// Paths are stored relative to the baseline file so it can be committed and
+// used regardless of the invocation directory.
 function entryFor(finding: Finding, baselineDir: string): BaselineEntry {
   return {
     file: path.relative(baselineDir, finding.file).replaceAll('\\', '/'),
@@ -50,7 +49,6 @@ export function writeBaseline(
   return { resolvedPath, count: entries.length };
 }
 
-/** Load a baseline and return a matcher telling whether a finding is recorded in it. */
 export function loadBaseline(baselinePath: string): (finding: Finding) => boolean {
   const resolvedPath = path.resolve(baselinePath);
   const baselineDir = path.dirname(resolvedPath);

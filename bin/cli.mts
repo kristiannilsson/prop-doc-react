@@ -122,39 +122,30 @@ function usageError(message: string): never {
   process.exit(2);
 }
 
-let values: {
-  json?: boolean;
-  verbose?: boolean;
-  'include-test-components'?: boolean;
-  rules?: string;
-  'min-sites'?: string;
-  baseline?: string;
-  'write-baseline'?: boolean;
-  'assume-internal'?: boolean;
-  fix?: boolean;
-  'dry-run'?: boolean;
-};
-let positionals: string[];
-try {
-  ({ values, positionals } = parseArgs({
-    args,
-    options: {
-      json: { type: 'boolean' },
-      verbose: { type: 'boolean' },
-      'include-test-components': { type: 'boolean' },
-      rules: { type: 'string' },
-      'min-sites': { type: 'string' },
-      baseline: { type: 'string' },
-      'write-baseline': { type: 'boolean' },
-      'assume-internal': { type: 'boolean' },
-      fix: { type: 'boolean' },
-      'dry-run': { type: 'boolean' },
-    },
-    allowPositionals: true,
-  }));
-} catch (error) {
-  usageError(error instanceof Error ? error.message : String(error));
+function parseCli() {
+  try {
+    return parseArgs({
+      args,
+      options: {
+        json: { type: 'boolean' },
+        verbose: { type: 'boolean' },
+        'include-test-components': { type: 'boolean' },
+        rules: { type: 'string' },
+        'min-sites': { type: 'string' },
+        baseline: { type: 'string' },
+        'write-baseline': { type: 'boolean' },
+        'assume-internal': { type: 'boolean' },
+        fix: { type: 'boolean' },
+        'dry-run': { type: 'boolean' },
+      },
+      allowPositionals: true,
+    });
+  } catch (error) {
+    usageError(error instanceof Error ? error.message : String(error));
+  }
 }
+
+const { values, positionals } = parseCli();
 
 const asJson = values.json ?? false;
 const verbose = values.verbose ?? false;
@@ -226,9 +217,7 @@ if (fixMode) {
   const plan = planFixes(findings, isBaselined);
   fixResult = { edits: applyFixes(plan, { dryRun }), findingsFixed: plan.findings.length };
   if (!dryRun && fixResult.edits.length > 0) {
-    // Re-analyze on a fresh program so the report reflects the post-fix state
-    // and a fix that changed the evidence for another finding is caught
-    // rather than compounded.
+    // Re-analyze on a fresh program so the report reflects the post-fix state.
     ({ findings, skipped, componentsAnalyzed } = analyzeProject(tsconfigPaths, {
       includeTestComponents,
       rules,
@@ -238,9 +227,6 @@ if (fixMode) {
   }
 }
 
-// Only NEW dead-code findings the analysis is sure about fail the CI gate;
-// advisory rules, low-confidence findings, public-API components (external
-// consumers are invisible), and baselined findings never affect the exit code.
 const gates = (f: Finding): boolean =>
   f.severity === 'definite' && !f.lowConfidence && !f.publicApi && !isBaselined(f);
 

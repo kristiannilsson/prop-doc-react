@@ -21,7 +21,6 @@ test('--json emits parseable findings and exits 1 on definite findings', () => {
   assert.ok(report.findings.every((f) => f.component && f.prop && f.kind && f.file));
   assert.equal(report.skippedForOpaqueSpread.length, 1);
   assert.equal(typeof report.componentsAnalyzed, 'number');
-  // CLI relativizes paths and normalizes separators
   assert.ok(report.findings.every((f) => !path.isAbsolute(f.file) && !f.file.includes('\\')));
 });
 
@@ -130,7 +129,6 @@ test('public-API findings do not gate the exit code; --assume-internal restores 
   const report = JSON.parse(demoted.stdout);
   const exported = report.findings.find((f) => f.component === 'Exported');
   assert.equal(exported.publicApi, true);
-  // Internal's finding still gates, so exit stays 1; check the marker instead.
   const human = run(publicApiTsconfig, '--rules', 'never');
   assert.match(human.stdout, /\[public API: may have consumers outside this program\]/);
 
@@ -152,7 +150,6 @@ test('--fix --dry-run previews edits without touching files, --fix applies and r
     assert.match(dry.stdout, /Planned Fixes \(no files changed\)/);
     assert.match(dry.stdout, /removed size=\{7\}/);
     assert.equal(fs.readFileSync(appFile, 'utf8'), before);
-    // dry-run still reports the finding it would fix
     assert.match(dry.stdout, /\[passed-equals-default\]/);
 
     const fixed = run(tsconfig, '--fix');
@@ -160,7 +157,6 @@ test('--fix --dry-run previews edits without touching files, --fix applies and r
     const after = fs.readFileSync(appFile, 'utf8');
     assert.ok(!after.includes('<PassedDefault size={7} />'));
     assert.match(after, /<PassedDefault \/>/);
-    // Declaration-side fixes: narrowed wide type, pruned union, folded defaults.
     const comps = fs.readFileSync(path.join(dir, 'src', 'components.tsx'), 'utf8');
     assert.match(comps, /kind\?: 'a' \| 'b';/);
     assert.match(comps, /mode\?: 'on' \| 'off';/);
@@ -168,7 +164,6 @@ test('--fix --dry-run previews edits without touching files, --fix applies and r
     assert.match(comps, /\{ pad = 4 \}/);
     assert.ok(!after.includes('tone="calm"'));
     assert.ok(!after.includes('pad={4}'));
-    // Whole-prop removal: declaration lines, bindings, and callsite attributes.
     assert.ok(!comps.includes('vestigial'));
     assert.ok(!comps.includes('stale'));
     assert.ok(!comps.includes('onDead'));
@@ -176,8 +171,6 @@ test('--fix --dry-run previews edits without touching files, --fix applies and r
     assert.match(comps, /TrimBinding\(\{ a \}: TrimBindingProps\)/);
     assert.ok(!after.includes('onDead'));
     assert.ok(!after.includes('ignored={1}'));
-    // The report reflects the re-run: the fixed findings are gone, and the
-    // now-never-passed props surface as follow-up findings.
     assert.ok(!fixed.stdout.includes('[passed-equals-default]'));
     assert.ok(!fixed.stdout.includes('[type-wider-than-usage]'));
     assert.ok(!fixed.stdout.includes('[unconsumed]'));

@@ -1,18 +1,19 @@
 import path from 'node:path';
 import ts from 'typescript';
-import { collectComponents } from './analyzer/collect-components.mjs';
+import { collectComponents, markPublicComponents } from './analyzer/collect-components.mjs';
 import { collectUsages } from './analyzer/collect-usages.mjs';
-import { markPublicComponents } from './analyzer/public-api.mjs';
 import {
   ALL_FINDING_KINDS,
   DEFAULT_MIN_SITES,
   FINDING_SEVERITY,
   buildFindings,
 } from './analyzer/build-findings.mjs';
-import { TEST_FILE_RE } from './analyzer/constants.mjs';
 import type { AnalyzeResult, FindingKind } from './analyzer/types.mjs';
 
-export { ALL_FINDING_KINDS, DEFAULT_MIN_SITES, FINDING_SEVERITY, TEST_FILE_RE };
+export const TEST_FILE_RE =
+  /(\.(test|spec|stories|story)\.[jt]sx?$)|([\\/](__tests__|__mocks__|__stories__|tests?|fixtures|testing)[\\/])/;
+
+export { ALL_FINDING_KINDS, DEFAULT_MIN_SITES, FINDING_SEVERITY };
 export { FIXABLE_KINDS, applyFixes, planFixes } from './fixer.mjs';
 export type { AppliedEdit, FixPlan } from './fixer.mjs';
 export type {
@@ -27,11 +28,8 @@ export type {
 
 export interface AnalyzeOptions {
   includeTestComponents?: boolean;
-  /** Only run these rules; defaults to all. */
   rules?: FindingKind[];
-  /** Minimum non-test site count before statistical rules (always, union variants, same-literal) fire. */
   minSites?: number;
-  /** Skip public-API detection: treat every component as having no consumers outside this program. */
   assumeInternal?: boolean;
 }
 
@@ -68,8 +66,6 @@ export function analyzeProject(
   const initialPaths = Array.isArray(tsconfigPath) ? tsconfigPath : [tsconfigPath];
   if (initialPaths.length === 0) throw new Error('At least one tsconfig path is required.');
 
-  // Load every given config plus, recursively, its project references, so
-  // render sites across monorepo package boundaries land in one program.
   const configs: { path: string; parsed: ts.ParsedCommandLine }[] = [];
   const queue = initialPaths.map((p) => path.resolve(p));
   const visited = new Set<string>();
@@ -84,12 +80,10 @@ export function analyzeProject(
     }
   }
 
+  // Referenced projects' sources join as root files of one merged program —
+  // deliberately not as projectReferences, which would hide them behind
+  // (possibly unbuilt) declaration outputs and drop them from the program.
   const rootNames = [...new Set(configs.flatMap((c) => c.parsed.fileNames))];
-  // One merged program; the first config's compiler options govern. The
-  // referenced projects' SOURCES are included as root files directly —
-  // deliberately not passed as projectReferences, which would make TS treat
-  // them as external inputs behind their (possibly unbuilt) declaration
-  // outputs and drop them from the program.
   const program = ts.createProgram({
     rootNames,
     options: configs[0].parsed.options,
@@ -97,9 +91,8 @@ export function analyzeProject(
   const checker = program.getTypeChecker();
   const isProjectFile = (sf: ts.SourceFile): boolean =>
     !sf.isDeclarationFile && !sf.fileName.includes('node_modules');
-  // Classify test files by their path *within* the nearest project, so a repo
-  // that itself lives under a /test/ or /fixtures/ directory isn't
-  // misclassified.
+  // Test files are classified by their path *within* the nearest project, so
+  // a repo living under a /test/ or /fixtures/ directory isn't misclassified.
   const configDirs = configs.map((c) => path.dirname(c.path)).sort((a, b) => b.length - a.length);
   const isTestFile = (fileName: string): boolean => {
     const normalized = normPath(fileName);

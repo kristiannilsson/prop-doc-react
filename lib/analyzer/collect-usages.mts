@@ -1,6 +1,11 @@
 import ts from 'typescript';
-import type { ComponentRecord, LiteralValue, PassStats, TextSpan } from './types.mjs';
-import { literalKey } from './constants.mjs';
+import {
+  literalKey,
+  type ComponentRecord,
+  type LiteralValue,
+  type PassStats,
+  type TextSpan,
+} from './types.mjs';
 
 interface CollectUsagesArgs {
   program: ts.Program;
@@ -16,11 +21,8 @@ interface RecordPassedOptions {
   siteId: string;
   fromSpread?: boolean;
   literal?: LiteralValue;
-  /** For non-literal values: whether the expression's type admits undefined. Defaults to true (conservative). */
   possiblyUndefined?: boolean;
-  /** For attribute passes: the span deleting the source attribute (fix target). */
   attrSpan?: TextSpan;
-  /** For attribute passes: the initializer is side-effect-free, so whole-prop removal may delete the attribute. */
   attrDeletable?: boolean;
 }
 
@@ -82,18 +84,14 @@ function literalFromAttribute(attr: ts.JsxAttribute): LiteralValue | undefined {
   return undefined;
 }
 
-// The span covers the attribute plus the whitespace separating it from the
-// previous token, so deleting it never leaves double spaces or blank lines.
 function attributeDeletionSpan(attr: ts.JsxAttribute, sf: ts.SourceFile): TextSpan {
   let start = attr.getStart(sf);
   while (start > 0 && /\s/.test(sf.text[start - 1])) start -= 1;
   return { file: sf.fileName, start, end: attr.getEnd() };
 }
 
-// Whether deleting the attribute cannot change behavior: evaluating its
-// initializer has no side effects. Literals are handled by the caller.
 function isSideEffectFreeInitializer(attr: ts.JsxAttribute): boolean {
-  if (!attr.initializer) return true; // bare attribute
+  if (!attr.initializer) return true;
   if (ts.isStringLiteral(attr.initializer)) return true;
   if (!ts.isJsxExpression(attr.initializer) || !attr.initializer.expression) return false;
   const expr = attr.initializer.expression;
@@ -181,7 +179,6 @@ function recordPassed(
 
   stats.nonTestSites.add(options.siteId);
   if (options.fromSpread) {
-    // A spread's optional member may be absent at runtime entirely.
     stats.unknownValueInNonTest = true;
     stats.possiblyUndefinedInNonTest = true;
     return;

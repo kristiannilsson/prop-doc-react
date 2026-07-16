@@ -1,19 +1,19 @@
 import ts from 'typescript';
-import type {
-  BodyUsage,
-  ComponentRecord,
-  Finding,
-  FindingKind,
-  FindingSeverity,
-  FixEdit,
-  OwnPropMeta,
-  PassStats,
-  SkippedComponent,
-  TextSpan,
-  UnionVariant,
+import {
+  literalKey,
+  type BodyUsage,
+  type ComponentRecord,
+  type Finding,
+  type FindingKind,
+  type FindingSeverity,
+  type FixEdit,
+  type OwnPropMeta,
+  type PassStats,
+  type SkippedComponent,
+  type TextSpan,
+  type UnionVariant,
 } from './types.mjs';
 import { analyzeBodyUsage, isConsumed } from './analyze-body.mjs';
-import { literalKey } from './constants.mjs';
 
 export const FINDING_SEVERITY: Record<FindingKind, FindingSeverity> = {
   never: 'definite',
@@ -27,19 +27,16 @@ export const FINDING_SEVERITY: Record<FindingKind, FindingSeverity> = {
   'type-wider-than-usage': 'advisory',
 };
 
-/** Render a type-tagged literal key for humans: strings quoted, the rest raw. */
 function displayLiteral(key: string): string {
   return key.startsWith('string:')
     ? JSON.stringify(key.slice('string:'.length))
     : key.slice(key.indexOf(':') + 1);
 }
 
-/** Whether a type-tagged literal key can be rendered back into source text. */
 function isSourceableKey(key: string): boolean {
   return key.startsWith('string:') || key.startsWith('number:');
 }
 
-/** Render a type-tagged literal key as source text: strings single-quoted, numbers raw. */
 function sourceTextOfKey(key: string): string {
   if (key.startsWith('number:')) return key.slice('number:'.length);
   const value = key.slice('string:'.length);
@@ -97,9 +94,6 @@ function suppressionFromComment(commentText: string): 'all' | FindingKind[] | un
   return kinds.length > 0 ? kinds : 'all';
 }
 
-// A `prop-doc-ignore` comment on its own line above the prop declaration, or
-// trailing on the same line, suppresses all rules for that prop; naming rules
-// (`prop-doc-ignore never, always`) suppresses only those.
 function propSuppression(
   prop: ts.Symbol,
   isProjectFile: (sf: ts.SourceFile) => boolean,
@@ -128,7 +122,6 @@ function propSuppression(
   return kinds.size > 0 ? kinds : undefined;
 }
 
-/** Type-tagged literal key of a union member type node, or undefined for non-literal members. */
 function unionMemberNodeKey(node: ts.TypeNode): string | undefined {
   if (!ts.isLiteralTypeNode(node)) return undefined;
   const literal = node.literal;
@@ -144,9 +137,9 @@ function unionMemberNodeKey(node: ts.TypeNode): string | undefined {
   return undefined;
 }
 
-// The span deletes the declaration's whole line when it stands alone: the
-// preceding newline and indentation, the node (separator included), and any
-// trailing line comment.
+// Deletes the declaration's whole line when it stands alone: the preceding
+// newline and indentation, the node (separator included), and any trailing
+// line comment.
 function declarationDeletionSpan(decl: ts.Declaration, sf: ts.SourceFile): TextSpan {
   const text = sf.text;
   let start = decl.getStart(sf);
@@ -166,7 +159,6 @@ function declarationDeletionSpan(decl: ts.Declaration, sf: ts.SourceFile): TextS
   return { file: sf.fileName, start, end };
 }
 
-/** Declaration-side fix targets, when the prop is one plain property signature in project code. */
 function declarationNodeInfo(
   prop: ts.Symbol,
 ): Pick<
@@ -228,13 +220,9 @@ function ownProps(
   return result;
 }
 
-/**
- * same-literal fix: fold the literal into the destructuring default, then
- * delete the attribute at every callsite. Behavior-preserving only when EVERY
- * render site (test files included) verifiably passes that exact literal —
- * a site omitting the prop would observe the new default, and non-literal
- * values can't be verified.
- */
+// Behavior-preserving only when EVERY render site (test files included)
+// verifiably passes that exact literal — a site omitting the prop would
+// observe the new default.
 function sameLiteralFix(
   component: ComponentRecord,
   prop: OwnPropMeta,
@@ -247,15 +235,12 @@ function sameLiteralFix(
   const literalText = sourceTextOfKey(key);
   const defaultEdit: FixEdit =
     defaultTarget.start === defaultTarget.end
-      ? { ...defaultTarget, newText: ` = ${literalText}` } // insert after the binding name
-      : { ...defaultTarget, newText: literalText }; // replace the (never-exercised) default
+      ? { ...defaultTarget, newText: ` = ${literalText}` }
+      : { ...defaultTarget, newText: literalText };
   return [defaultEdit, ...spans.map((s) => ({ ...s, newText: '' }))];
 }
 
-/** type-wider-than-usage fix: replace the bare `string`/`number` keyword with the observed-literal union. */
 function typeWiderFix(prop: OwnPropMeta, stats: PassStats): FixEdit[] | undefined {
-  // A test-file site passing a non-literal value would no longer typecheck
-  // against the narrowed union, so the fix requires literals everywhere.
   if (!prop.typeNodeSpan || !prop.typeNodeIsWideKeyword || stats.unknownValueInTest)
     return undefined;
   const keys = [...stats.literalAttrSpans.keys()];
@@ -266,11 +251,8 @@ function typeWiderFix(prop: OwnPropMeta, stats: PassStats): FixEdit[] | undefine
   return [{ ...prop.typeNodeSpan, newText: texts.join(' | ') }];
 }
 
-/** union-variant-never fix: rewrite the direct union type node keeping only members some site passes. */
 function unionVariantFix(prop: OwnPropMeta, stats: PassStats): FixEdit[] | undefined {
   if (!prop.typeNodeSpan || !prop.unionMemberNodes || stats.unknownValueInTest) return undefined;
-  // Only variants that no site anywhere (test files included) passes may go;
-  // non-literal members (e.g. an explicit `undefined`) are always kept.
   const kept = prop.unionMemberNodes.filter(
     (m) => m.key === undefined || stats.literalAttrSpans.has(m.key),
   );
@@ -279,13 +261,8 @@ function unionVariantFix(prop: OwnPropMeta, stats: PassStats): FixEdit[] | undef
   return [{ ...prop.typeNodeSpan, newText: kept.map((m) => m.text).join(' | ') }];
 }
 
-/**
- * Whole-prop removal (never / unconsumed / callback-never-invoked): delete
- * the declaration line, the (unreferenced) destructuring binding, and every
- * callsite attribute. Only when the body verifiably doesn't consume the prop
- * and every pass is an attribute whose initializer is side-effect-free —
- * a spread, JSX nesting, or a call-expression value blocks the fix.
- */
+// Whole-prop removal, only when the body verifiably doesn't consume the prop
+// and every pass is an attribute whose initializer is side-effect-free.
 function removePropFix(
   prop: OwnPropMeta,
   stats: PassStats | undefined,
@@ -363,8 +340,6 @@ export function buildFindings({
         publicApi: component.publicApi,
       };
 
-      // Consumption rules look at the component body, so they apply to
-      // required props too, whether or not any parent passes the prop.
       if (!isConsumed(usage, prop.name)) {
         if (prop.isCallable && passedStats) {
           if (active('callback-never-invoked')) {
@@ -379,16 +354,12 @@ export function buildFindings({
         }
       }
 
-      // Value-pattern rules apply to required props too: statistical evidence
-      // needs enough sites, all with literal (or at least defined) values.
       const literalSites =
         passedStats !== undefined &&
         passedStats.nonTestSites.size >= minSites &&
         !passedStats.unknownValueInNonTest;
 
-      // Every provided value is exactly the destructuring default: the
-      // attribute is redundant at each callsite. Wins over same-literal,
-      // which describes the same evidence less actionably.
+      // Wins over same-literal, which describes the same evidence less actionably.
       const defaultKey = usage.defaulted.get(prop.name);
       const equalsDefault =
         literalSites &&
@@ -400,9 +371,8 @@ export function buildFindings({
           ...base,
           kind: 'passed-equals-default',
           literalValue: displayLiteral(defaultKey),
-          // Only attributes whose value was verified to be this exact literal
-          // have spans under this key; sites passing the default through a
-          // variable stay untouched.
+          // Only attributes verified to pass this exact literal have spans
+          // under this key; sites passing it through a variable stay untouched.
           fix: (passedStats.literalAttrSpans.get(defaultKey) ?? []).map((s) => ({
             ...s,
             newText: '',
@@ -410,8 +380,7 @@ export function buildFindings({
         });
       }
 
-      // Booleans are excluded: a bare attribute makes one-sided usage the
-      // JSX idiom, so "always passed true" is rarely actionable.
+      // Booleans excluded: a bare attribute makes one-sided usage the JSX idiom.
       if (
         !equalsDefault &&
         active('same-literal') &&
@@ -434,9 +403,6 @@ export function buildFindings({
         });
       }
 
-      // Wide string/number props whose observed values are a small repeated
-      // set want a union literal type. Needs distinct >= 2 (1 is same-literal)
-      // and enough repetition that the set looks intentional.
       if (
         active('type-wider-than-usage') &&
         prop.isWideStringOrNumber &&
@@ -473,8 +439,6 @@ export function buildFindings({
 
       if (!passedStats) {
         if (active('never')) {
-          // Removal is only safe when the body verifiably ignores the prop;
-          // a body still reading it needs a human to resolve the dead branch.
           push({
             ...base,
             kind: 'never',
@@ -488,11 +452,8 @@ export function buildFindings({
         push({ ...base, kind: 'tests-only', testFiles: [...passedStats.files].sort() });
       }
 
-      // The remaining rules are statistical: their evidence is a usage pattern
-      // across sites, so they only fire once enough sites back the pattern.
-      // "Always passed" also requires every value's type to exclude undefined:
-      // a site passing `x={maybe}` with `maybe: string | undefined` provides
-      // the prop only conditionally, so it is no candidate for required.
+      // A site passing a possibly-undefined value provides the prop only
+      // conditionally, so it is no candidate for required.
       if (
         active('always') &&
         component.renderSitesNonTest >= minSites &&

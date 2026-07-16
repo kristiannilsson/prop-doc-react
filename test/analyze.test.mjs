@@ -7,7 +7,6 @@ import { analyzeProject } from '../dist/lib/analyze.mjs';
 const pkgRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const fixtureTsconfig = path.join(pkgRoot, 'testdata', 'basic', 'tsconfig.json');
 
-// One shared run: building the program is the expensive part.
 const result = analyzeProject(fixtureTsconfig);
 const findingsFor = (component) => result.findings.filter((f) => f.component === component);
 
@@ -29,7 +28,6 @@ test('does not flag an optional prop that some parent passes', () => {
 });
 
 test('does not flag a required prop', () => {
-  // Dead's required prop `used` must not appear even though the tool sees it.
   assert.ok(findingsFor('Dead').every((f) => f.prop !== 'used'));
 });
 
@@ -161,7 +159,6 @@ test('flags callsites that always pass exactly the destructuring default', () =>
   assert.ok(kinds.includes('passed-equals-default'));
   const finding = findingsFor('PassedDefault').find((f) => f.kind === 'passed-equals-default');
   assert.equal(finding.literalValue, '7');
-  // The more specific rule wins over the overlapping generic one.
   assert.ok(!kinds.includes('same-literal'));
 });
 
@@ -173,7 +170,6 @@ test('passed-equals-default carries one deletion edit per verified callsite attr
     assert.ok(Number.isInteger(edit.start) && edit.end > edit.start);
     assert.equal(edit.newText, '');
   }
-  // Findings without a fixer stay span-free.
   assert.equal(findingsFor('Dead')[0].fix, undefined);
 });
 
@@ -212,7 +208,6 @@ test('same-literal fix inserts a default when none exists', () => {
 });
 
 test('same-literal attaches no fix without a destructuring target or for required props', () => {
-  // SameLiteral reads props.tone without destructuring; WideChoice.group is required.
   assert.equal(findingsFor('SameLiteral').find((f) => f.kind === 'same-literal').fix, undefined);
   assert.equal(findingsFor('WideChoice').find((f) => f.kind === 'same-literal').fix, undefined);
 });
@@ -248,8 +243,6 @@ test('boolean true does not count as the string variant "true"', () => {
 });
 
 test('classifies test files relative to the tsconfig directory, not the absolute path', () => {
-  // This fixture lives under testdata/fixtures/, which the test-file regex
-  // matches; only paths *inside* the project may trigger classification.
   const mini = analyzeProject(path.join(pkgRoot, 'testdata', 'fixtures', 'mini', 'tsconfig.json'));
   const kinds = mini.findings.map((f) => `${f.component}.${f.prop}:${f.kind}`);
   assert.ok(kinds.includes('Mini.dead:never'), `expected a finding, got [${kinds.join(', ')}]`);
@@ -285,11 +278,8 @@ test('flags an optional defaulted prop that every non-test site passes', () => {
 });
 
 test('always does not fire when a site passes a possibly-undefined value', () => {
-  // DefaultMaybe's `size` is passed at every site, but one value is typed
-  // `number | undefined` — the prop is only conditionally provided.
   const kinds = findingsFor('DefaultMaybe').map((f) => f.kind);
   assert.ok(!kinds.includes('always'));
-  // Control: DefaultDead passes only defined values and still fires.
   assert.ok(findingsFor('DefaultDead').some((f) => f.kind === 'always'));
 });
 
@@ -337,7 +327,6 @@ const appTsconfig = path.join(pkgRoot, 'testdata', 'monorepo', 'app', 'tsconfig.
 test('a package analyzed alone misses render sites in sibling packages', () => {
   const uiAlone = analyzeProject(uiTsconfig);
   const buttonProps = uiAlone.findings.filter((f) => f.component === 'Button').map((f) => f.prop);
-  // Only the app passes `tone`, and ui alone can't see the app.
   assert.ok(buttonProps.includes('tone'));
 });
 
@@ -352,10 +341,9 @@ test('multiple tsconfig paths merge into one program with cross-package visibili
 
 test('project references are followed automatically', () => {
   const app = analyzeProject(appTsconfig);
-  // `tone` is passed right there in the app.
   assert.ok(!app.findings.some((f) => f.prop === 'tone'));
-  // extra.tsx is never imported by the app; only the followed reference to
-  // the ui tsconfig brings it into the program.
+  // extra.tsx is never imported by the app; only the followed project
+  // reference brings it into the program.
   assert.ok(
     app.findings.some(
       (f) => f.component === 'Unreferenced' && f.prop === 'lonely' && f.kind === 'never',
@@ -380,7 +368,6 @@ test('assumeInternal disables public-API demotion', () => {
 });
 
 test('a project without a package.json next to its tsconfig is all internal', () => {
-  // The basic fixture has no package.json in testdata/basic.
   assert.ok(result.findings.every((f) => f.publicApi === false));
 });
 
