@@ -1,5 +1,5 @@
 import path from 'node:path';
-import ts from 'typescript';
+import { Project, ts } from 'ts-morph';
 import { collectComponents, markPublicComponents } from './analyzer/collect-components.mjs';
 import { collectUsages } from './analyzer/collect-usages.mjs';
 import {
@@ -57,12 +57,6 @@ export function analyzeProject(
   tsconfigPath: string | string[],
   { includeTestComponents = false, rules, minSites, assumeInternal = false }: AnalyzeOptions = {},
 ): AnalyzeResult {
-  if (typeof ts.createProgram !== 'function') {
-    throw new Error(
-      `The resolved 'typescript' package (${ts.version ?? 'unknown'}) has no compiler API; TypeScript 5.x is required.`,
-    );
-  }
-
   const initialPaths = Array.isArray(tsconfigPath) ? tsconfigPath : [tsconfigPath];
   if (initialPaths.length === 0) throw new Error('At least one tsconfig path is required.');
 
@@ -84,11 +78,10 @@ export function analyzeProject(
   // deliberately not as projectReferences, which would hide them behind
   // (possibly unbuilt) declaration outputs and drop them from the program.
   const rootNames = [...new Set(configs.flatMap((c) => c.parsed.fileNames))];
-  const program = ts.createProgram({
-    rootNames,
-    options: configs[0].parsed.options,
-  });
-  const checker = program.getTypeChecker();
+  const project = new Project({ compilerOptions: configs[0].parsed.options });
+  for (const rootName of rootNames) project.addSourceFileAtPath(rootName);
+  const program = project.getProgram().compilerObject;
+  const checker = project.getTypeChecker().compilerObject;
   const isProjectFile = (sf: ts.SourceFile): boolean =>
     !sf.isDeclarationFile && !sf.fileName.includes('node_modules');
   // Test files are classified by their path *within* the nearest project, so

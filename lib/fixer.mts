@@ -1,4 +1,4 @@
-import fs from 'node:fs';
+import { Project } from 'ts-morph';
 import type { Finding, FindingKind, FixEdit } from './analyzer/types.mjs';
 
 export const FIXABLE_KINDS: ReadonlySet<FindingKind> = new Set<FindingKind>([
@@ -67,20 +67,14 @@ export interface AppliedEdit {
 
 export function applyFixes(plan: FixPlan, { dryRun = false } = {}): AppliedEdit[] {
   const applied: AppliedEdit[] = [];
+  const project = new Project({ skipLoadingLibFiles: true });
   for (const [file, edits] of plan.editsByFile) {
-    const raw = fs.readFileSync(file, 'utf8');
-    // Spans are relative to the text as TypeScript read it, which excludes a BOM.
-    const bom = raw.codePointAt(0) === 0xfeff ? raw[0] : '';
-    const text = raw.slice(bom.length);
+    const sourceFile = project.addSourceFileAtPath(file);
+    const text = sourceFile.getFullText();
     if ((edits.at(-1) as FixEdit).end > text.length) {
       throw new Error(`Fix span out of range in ${file}; the file changed since the analysis ran`);
     }
 
-    let updated = text;
-    for (let i = edits.length - 1; i >= 0; i--) {
-      const edit = edits[i];
-      updated = updated.slice(0, edit.start) + edit.newText + updated.slice(edit.end);
-    }
     for (const edit of edits) {
       applied.push({
         file,
@@ -89,8 +83,16 @@ export function applyFixes(plan: FixPlan, { dryRun = false } = {}): AppliedEdit[
         newText: edit.newText,
       });
     }
-    if (!dryRun) fs.writeFileSync(file, bom + updated);
+    if (!dryRun) {
+      sourceFile.applyTextChanges(
+        edits.map((edit) => ({
+          span: { start: edit.start, length: edit.end - edit.start },
+          newText: edit.newText,
+        })),
+      );
+    }
   }
+  if (!dryRun) project.saveSync();
   applied.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line);
   return applied;
 }

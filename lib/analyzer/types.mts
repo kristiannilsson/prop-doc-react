@@ -1,4 +1,4 @@
-import type ts from 'typescript';
+import type { ts } from 'ts-morph';
 
 export type FindingKind =
   | 'never'

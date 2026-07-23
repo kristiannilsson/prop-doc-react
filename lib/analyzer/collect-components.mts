@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import ts from 'typescript';
+import { ts } from 'ts-morph';
 import type { ComponentRecord } from './types.mjs';
 
 const WRAPPER_NAMES = new Set(['memo', 'forwardRef', 'observer']);

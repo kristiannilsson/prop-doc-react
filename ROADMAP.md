@@ -58,7 +58,7 @@ Note on ordering: rule trustworthiness is capped by program visibility. "See the
 
 Safety rules: fixability is a per-rule property (a fixer exists only where the edit is mechanical and behavior-preserving — the definite/advisory axis measures CI-gate worthiness, not fix safety); never fix low-confidence or `publicApi` findings; a diff/dry-run mode before writing; and the analysis re-runs after applying so a fix that changes the evidence for another finding is caught rather than compounded.
 
-Implementation note: the analysis stays on the raw compiler API; the rewrite side is where ts-morph (or direct text edits from node spans) earns its place.
+Implementation note: the program is built via ts-morph's `Project` (analysis code still works off the underlying `ts.Program`/`ts.TypeChecker`), and `--fix` applies edits through ts-morph's `SourceFile#applyTextChanges` instead of manual string splicing.
 
 ## Product-Level Improvements
 

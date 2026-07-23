@@ -56,8 +56,8 @@ src/containers/common/CustomerSelector.tsx
 
 ### Options
 
-| Flag                        | Effect                                                              |
-| --------------------------- | ------------------------------------------------------------------- |
+| Flag                          | Effect                                                              |
+| ----------------------------- | ------------------------------------------------------------------- |
 | `--json`                    | Machine-readable output                                             |
 | `--verbose`                 | Also list components skipped due to untyped spreads                 |
 | `--include-test-components` | Analyze components defined in test/story files too                  |
@@ -67,7 +67,7 @@ src/containers/common/CustomerSelector.tsx
 | `--write-baseline`          | Record the current findings to the baseline file and exit 0         |
 | `--assume-internal`         | Treat every component as internal (skip public-API demotion)        |
 | `--fix`                     | Apply safe fixes, then re-analyze and report what remains           |
-| `--dry-run`                 | With `--fix`: print the planned edits without changing any file     |
+| `--dry-run`                 | With`--fix`: print the planned edits without changing any file    |
 
 ### Autofix
 
